@@ -53,14 +53,25 @@ Sem isso, os links de confirmação e de "Esqueci minha senha" não voltam para 
 
 Abra o site no celular e use **Adicionar à tela inicial** (Safari ou Chrome). Ele abre como app.
 
-## Área do motorista e QR code (versão 2)
+## Três áreas separadas (versão 3)
+
+| Endereço | Quem usa | O que tem |
+| --- | --- | --- |
+| `/f2` | Equipe da F2 | Painel interno completo |
+| `/cliente` | Administrativo da empresa cliente | Carros, contratos e franquias, uso, abastecimento, manutenção, faturas, multas, chamados e liberação dos motoristas |
+| `/motorista` | Motorista | Check-in e checkout com km, abastecimento (nota e litros), vistoria por foto e chamado de manutenção |
+
+- O endereço principal (`/`) mostra as três opções. Quem já está conectado vai direto para a sua área.
+- Cada conta só entra na sua área. Se entrar pela porta errada, o sistema avisa e mostra o botão para a área certa.
+- O motorista não vê valores, contratos, faturas, multas, documentos nem dados de outros motoristas. Isso é bloqueado no banco (Row Level Security), não só na tela.
+- Preço de compra, consórcio e venda dos carros ficam num registro separado (`veiculos_fin`), visível só para a F2. Os modelos de plano (preços) também.
+
+## QR code e cadastro do motorista
 
 - Em cada veículo, no painel da F2 (ou na janela do veículo do gestor), o botão **QR code** abre o código para imprimir e colar no carro.
 - O motorista aponta a câmera: se já tem conta, cai direto no check-in daquele carro; se não tem, cria a conta, preenche CPF, telefone e CNH, e o pedido vai para o **gestor do cliente**, que libera na aba **Motoristas**.
 - Check-in e checkout registram km, foto do odômetro, fotos do carro, observação e localização (só naquele momento). A data e a hora vêm do servidor.
-- O motorista também registra abastecimento (litros, valor, nota), vistoria com fotos (frente, traseira, laterais, painel), manutenção, problema, emergência, sinistro, reembolso e documentos.
 - Manutenção preventiva: intervalos padrão em **Configurações**, ajustáveis por veículo. O app avisa quando está chegando e quando venceu.
-- A F2 pode usar **Ver como cliente** no Painel para ver o app exatamente como o gestor ou o motorista, sem gravar nada.
 - Ao atualizar uma instalação antiga, rode o `instalacao.sql` de novo no SQL Editor: ele só acrescenta o que falta.
 
 ## Perfis
@@ -71,7 +82,7 @@ Abra o site no celular e use **Adicionar à tela inicial** (Safari ou Chrome). E
 | Operacional F2 | Frota, contratos, uso, vistorias, manutenção, multas, documentos |
 | Financeiro F2 | Faturas, resultado, lançamentos, reembolsos |
 | Gestor do cliente | Os veículos da própria empresa, contratos e franquias, uso, abastecimento, manutenção, faturas, multas, chamados, e libera os motoristas |
-| Motorista (condutor) | Check-in/checkout, abastecimento, vistoria com fotos, km, manutenção, emergência, seguro e reembolso; não vê faturas |
+| Motorista (condutor) | Check-in/checkout com km, abastecimento, vistoria com fotos e chamado de manutenção; não vê valores nem contratos |
 
 O isolamento entre clientes é feito pelas regras do banco (Row Level Security): um cliente não consegue ler dados de outro nem chamando a API diretamente. Lançamentos financeiros internos e a auditoria nunca chegam ao cliente.
 
