@@ -5,6 +5,7 @@ Pasta pronta para publicar. O sistema é um site estático (Vercel) que guarda t
 | Arquivo | Para que serve |
 | --- | --- |
 | `index.html` | O sistema inteiro: painel da F2 e portal do cliente (gestor e condutor) |
+| `api/agente.js` | O assistente de chat: confere quem está logado e conversa com o Claude (Anthropic). A chave fica só na Vercel |
 | `config.js` e `api/config.js` | Leem a URL e a chave pública do Supabase, que a integração Supabase ↔ Vercel preenche sozinha |
 | `qrcode.js` | Gera o QR code de check-in de cada carro (biblioteca qrcode-generator, licença MIT) |
 | `instalacao.sql` | Cria tabelas, regras de acesso, tempo real e a pasta de anexos no Supabase |
@@ -53,9 +54,42 @@ Sem isso, os links de confirmação e de "Esqueci minha senha" não voltam para 
 
 Abra o site no celular e use **Adicionar à tela inicial** (Safari ou Chrome). Ele abre como app.
 
+## Assistente de chat (versão 5)
+
+Botão **Assistente** no canto da tela, na Área da F2 e na Área do cliente (administrativo do cliente). O motorista não vê o assistente.
+
+- Responde perguntas com os números do próprio sistema: resumo do mês, resultado por carro, fluxo de caixa, franquia de km, combustível, pendências, contas em aberto.
+- Lança coisas por mensagem ("lança R$ 350 de pneu no RTA1B23", "abre um chamado para o HB20", "cadastra o motorista João"). Ele **nunca grava sozinho**: mostra um cartão com o que entendeu e, ao clicar em **Conferir e salvar**, abre o formulário já preenchido. Só salva quando você clicar em Salvar. Para pagar uma conta, pede confirmação no próprio cartão.
+- Vê apenas o que o usuário já vê nas telas. O administrativo do cliente só consulta a frota da empresa dele; o perfil operacional não acessa o financeiro.
+
+### Ligar o assistente (uma vez)
+
+1. Entre em **console.anthropic.com** (o endereço pode abrir como **platform.claude.com**) e crie a conta da F2.
+2. Em **Billing**, coloque crédito (o uso é cobrado por mensagem; cada pergunta custa alguns centavos).
+3. Em **API Keys**, clique em **Create Key**, dê o nome `F2 Conect` e copie a chave (começa com `sk-ant-`). Ela só aparece uma vez.
+4. Na **Vercel**, abra o projeto **f2-conect** → **Settings** → **Environment Variables** → **Add**:
+   - Key: `ANTHROPIC_API_KEY`
+   - Value: cole a chave
+   - Marque Production, Preview e Development e clique em **Save**.
+5. Ainda na Vercel, vá em **Deployments**, clique nos três pontinhos do mais recente → **Redeploy**.
+6. Abra o site, clique em **Assistente** e pergunte "como está a empresa este mês?".
+
+A chave nunca vai para o navegador nem para o GitHub. Para trocar o modelo, crie a variável `ANTHROPIC_MODEL` (padrão: `claude-sonnet-5-5`). Para desligar o assistente, apague a variável `ANTHROPIC_API_KEY` e faça Redeploy.
+
+## Painel completo (versão 5)
+
+O Painel tem quatro abas:
+
+- **Visão geral:** clientes, frota, aluguel mensal, total a receber, faturas em aberto, receita, custo fixo, custo variável, resultado do mês, gráfico de 6 meses e pendências.
+- **Rentabilidade por carro:** ranking dos carros pelo resultado acumulado desde a compra, com receita, custos, margem, custo por km, aluguel ÷ preço do carro, retorno sobre a compra e estimativa de quantos meses faltam para o carro se pagar. Mostra os carros sem contrato. Exporta CSV.
+- **Fluxo de caixa:** previsão dos próximos 6 meses com as faturas em aberto, os aluguéis que ainda serão faturados, as contas a pagar e as fixas recorrentes. Dá para informar o saldo em conta de hoje para ver o saldo acumulado.
+- **Clientes e risco:** receita de 12 meses, concentração (quanto cada cliente representa do aluguel mensal), atrasos, pontualidade, contratos terminando em 90 dias, multas a repassar e um nível de risco (baixo, médio, alto) com o motivo.
+
+As abas de rentabilidade e fluxo de caixa aparecem só para Administrador e Financeiro.
+
 ## Menu da Área da F2 (versão 4)
 
-- **Painel:** resumo de tudo: clientes ativos, frota, aluguel mensal, total a receber até o fim dos contratos (estimado), faturas em aberto, receita, custo fixo, custo variável e resultado do mês, gráfico dos últimos 6 meses e pendências.
+- **Painel:** resumo de tudo (veja as abas acima): clientes ativos, frota, aluguel mensal, total a receber até o fim dos contratos (estimado), faturas em aberto, receita, custo fixo, custo variável e resultado do mês, gráfico dos últimos 6 meses e pendências.
 - **Clientes:** os clientes com contrato ativo. Dentro de cada um: resumo com os carros do contrato, contratos (e pedidos de km), motoristas, faturas e chamados.
 - **Veículos:** busca por placa, modelo, cliente ou situação. Dentro de cada carro: contrato, uso e check-in, quilometragem, abastecimento, vistorias, manutenções, chamados e reembolsos, documentos e seguros, multas, financeiro e histórico.
 - **Financeiro:** contratos a receber (faturas), contas fixas, contas variáveis e resultado. Cada conta tem um **centro de custo**: a placa do carro ou **Administrativo**. O tipo (fixa ou variável) é escolhido em cada conta.

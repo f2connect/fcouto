@@ -198,6 +198,39 @@ details summary{cursor:pointer}
 .qrsvg{width:min(260px,70vw);background:#fff;padding:6px;border-radius:6px}.qrsvg svg{display:block;width:100%;height:auto}
 @media print{ body *{visibility:hidden!important} #qrprint,#qrprint *{visibility:visible!important} #qrprint{position:fixed;left:0;top:0;width:100%;border:0;color:#000} dialog::backdrop{background:none} }
 @media (max-width:860px){ .side-foot{flex-direction:row;align-items:center;justify-content:space-between;margin-top:8px;padding-top:8px} .chklist{grid-template-columns:minmax(0,1fr)} }
+
+.kpi b .kpitx{white-space:normal;font-size:18px;line-height:1.2;display:block;overflow-wrap:anywhere}
+.hbar{height:6px;background:var(--surface-2);border-radius:3px;margin-top:4px;overflow:hidden}.hbar i{display:block;height:100%;border-radius:3px}
+#agbtn{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:40;display:flex;align-items:center;gap:8px;background:var(--accent);color:var(--accent-fg);border:0;border-radius:999px;padding:12px 18px 12px 15px;font:inherit;font-weight:600;font-size:15px;box-shadow:0 6px 22px rgba(0,0,0,.22);cursor:pointer}
+#agbtn:hover{filter:brightness(1.07)} #agbtn[hidden],#agpan[hidden]{display:none}
+#agpan{position:fixed;top:0;right:0;bottom:0;width:410px;max-width:100vw;z-index:41;background:var(--surface);border-left:1px solid var(--line);box-shadow:-8px 0 30px rgba(0,0,0,.12);display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)}
+#agpan header{display:flex;justify-content:space-between;align-items:center;padding:12px 12px 10px 16px;border-bottom:1px solid var(--line);padding-top:calc(12px + env(safe-area-inset-top,0px))}
+#agpan header small{display:block;color:var(--muted);font-size:12.5px}
+.aglog{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.agm{max-width:92%;padding:9px 12px;border-radius:12px;line-height:1.45;font-size:14.5px;overflow-wrap:anywhere}
+.agm.eu{align-self:flex-end;background:var(--accent);color:var(--accent-fg);border-bottom-right-radius:4px;white-space:pre-wrap}
+.agm.ag{align-self:flex-start;background:var(--surface-2);border-bottom-left-radius:4px}
+.agm.ag ul{margin:4px 0;padding-left:18px}.agm.ag li{margin:2px 0}.agm.ag code{font-family:var(--f-mono);font-size:13px}
+.agm.ag .agtr{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:8px;border-bottom:1px solid var(--line);padding:2px 0;font-size:13.5px}
+.agm.sis{align-self:flex-start;background:none;color:var(--muted);font-size:13px;padding:2px 4px}
+.agm.erro{align-self:stretch;background:var(--danger-bg);color:var(--danger);max-width:none}
+.agpensa i{display:inline-block;width:7px;height:7px;margin-right:4px;border-radius:50%;background:var(--muted);animation:agp 1s infinite ease-in-out}
+.agpensa i:nth-child(2){animation-delay:.15s}.agpensa i:nth-child(3){animation-delay:.3s}
+@keyframes agp{0%,80%,100%{opacity:.25}40%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.agpensa i{animation:none;opacity:.6}}
+.agcard{align-self:stretch;border:1px solid var(--accent);background:var(--accent-soft);border-radius:10px;padding:11px 12px;display:flex;flex-direction:column;gap:7px;font-size:14px}
+.agcard p{margin:0}.agcard dl{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 10px}.agcard dl div{display:contents}
+.agcard dt{color:var(--muted);font-size:13px}.agcard dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+.agcard .btn{align-self:flex-start}.agok{color:var(--ok);font-weight:600}
+.agvazio{color:var(--muted);font-size:14.5px}.agvazio b{color:var(--fg);font-size:16px}.agvazio p{margin:6px 0 12px}
+.agsug{display:flex;flex-direction:column;gap:6px}.agsug button{text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 11px;font:inherit;font-size:14px;color:var(--fg);cursor:pointer}
+.agsug button:hover{border-color:var(--accent)}
+.agform{display:flex;gap:8px;padding:10px 12px 4px;border-top:1px solid var(--line);align-items:flex-end}
+.agform textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:inherit;font-size:15px;background:var(--surface);color:var(--fg);max-height:140px}
+.agrod{display:block;color:var(--muted);font-size:11.5px;padding:0 14px 10px}
+@media (min-width:861px){ body.ag-on .app{margin-right:410px} body.ag-on .kpis{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))} }
+@media (max-width:860px){ #agpan{width:100vw;border-left:0} #agbtn{padding:13px 15px} #agbtn span{display:none} }
+@media print{ #agbtn,#agpan{display:none!important} }
 </style>
 </head>
 <body>
@@ -731,7 +764,7 @@ function openForm(key, id, preset){
         else { const arr=((cur&&cur[f.k])||[]).slice(); let n=0; for(const fl of el.files){ sub.textContent=`Enviando ${++n}/${el.files.length}…`; const r=await S.assets.upload(fl,cidUp); arr.push({id:r.id,nome:fl.name}); } v[f.k]=arr; } }
       sub.textContent='Salvando…';
       if(sc.save) await sc.save(v,id,cur); else await salvar(sc.col,id,v);
-      dlg.close(); toast('Salvo.');
+      dlg.close(); toast('Salvo.'); window.dispatchEvent(new CustomEvent('f2salvo',{detail:{key,id}}));
     }catch(ex){ err.textContent=errMsg(ex); err.style.color='var(--danger)'; err.hidden=false; sub.disabled=false; sub.textContent='Salvar'; }
   });
   if(dlg.open) dlg.close(); dlg.showModal();
@@ -1209,7 +1242,7 @@ function graficoMeses(){
 }
 
 /* ===================== painel, clientes e veículos ===================== */
-function vPainel(al){
+function vPainelGeral(al){
   const vs=L('veiculos'); const ativos=vs.filter(v=>statusVeiculo(v)!=='vendido'); const cnt=s=>ativos.filter(v=>statusVeiculo(v)===s).length;
   if(!vs.length && !L('clientes').length) return head('Painel',`Hoje, ${dbr(hoje())}`)+`<div class="card stack"><h2>Comece cadastrando a frota</h2><p class="muted" style="margin:0">O painel mostra o resumo de clientes, contratos, custos e resultado assim que houver dados. Ordem: cliente, veículo, contrato.</p><div class="row">${B('Cadastrar cliente','new','data-k="clientes"',1)}${B('Cadastrar veículo','new','data-k="veiculos"')}</div></div>`;
   const m=mesAtual(); const cs=L('contratos').filter(c=>contratoAtivo(c)); const cliAt=new Set(cs.map(c=>c.clienteId));
@@ -1274,11 +1307,410 @@ function filtrarVeiculos(q){ S.ui.busca=q; const t=q.trim().toLowerCase().replac
   document.querySelectorAll('[data-busca]').forEach(el=>{ const ok=!t || el.dataset.busca.replace(/[\s-]/g,'').includes(t); el.hidden=!ok; if(ok) n++; });
   const nd=$('#vnada'); if(nd) nd.hidden=n>0; }
 
+/* ===================== painel completo: rentabilidade, fluxo de caixa, clientes e risco ===================== */
+const P_DTABS=[['geral','Visão geral'],['rentab','Rentabilidade por carro'],['caixa','Fluxo de caixa'],['clientes','Clientes e risco']];
+const PAINEL_FIN=['rentab','caixa'];
+function vPainel(al){
+  if(!L('veiculos').length && !L('clientes').length) return vPainelGeral(al);
+  const fin=pode('resultado'); const tabs=P_DTABS.filter(t=>fin||!PAINEL_FIN.includes(t[0]));
+  let t=S.ui.ptab||'geral'; if(!tabs.some(x=>x[0]===t)) t='geral';
+  const bar=`<div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-ptab="${k}">${l}</button>`).join('')}</div>`;
+  if(t==='rentab') return head('Painel','Rentabilidade de cada carro desde a compra',B('Exportar CSV','csvRentab'))+bar+vRentab();
+  if(t==='caixa') return head('Painel','Fluxo de caixa previsto para os próximos 6 meses')+bar+vFluxo();
+  if(t==='clientes') return head('Painel','Clientes, concentração da receita e risco de cada um')+bar+vRisco();
+  const g=vPainelGeral(al); const i=g.indexOf('<div class="stack">'); return i<0? g : g.slice(0,i)+bar+g.slice(i);
+}
+const eixoR = v => (v<0?'-':'')+'R$ '+(Math.abs(v)>=1000? nf(Math.abs(v)/1000,Math.abs(v)>=10000?0:1)+' mil' : nf(Math.abs(v),0));
+const pct = (v,d=0) => v==null||!isFinite(v) ? '—' : nf(v,d)+'%';
+function barra(v, mx, neg){ const w=mx>0?Math.max(2,Math.min(100,Math.abs(v)/mx*100)):0; return `<div class="hbar"><i style="width:${w}%;background:${neg?'var(--danger)':'var(--accent)'}"></i></div>`; }
+
+/* ---------- rentabilidade por carro ---------- */
+function rentabVeiculo(v){
+  const id=v.id; const acc=resumoFin(x=>x===id,()=>true);
+  const compra=(+v.aqPreco||0)+(+v.aqCustos||0);
+  const kmRod=Math.max(0,kmAtual(v)-(+v.kmInicial||0));
+  const ult=[1,2,3].map(n=>resumoFin(x=>x===id,x=>x===mesMais(mesAtual(),-n)));
+  const comMov=ult.filter(r=>r.rec||r.custo); const med=comMov.length? comMov.reduce((s,r)=>s+r.res,0)/comMov.length : null;
+  const falta=compra-acc.res;
+  const payback = !compra ? null : falta<=0 ? 0 : (med && med>0 ? falta/med : null);
+  const c=contratoDoVeiculo(id); const aluguel=c?(+c.aluguel||0):0;
+  const meses = v.aqData ? Math.max(1,mesesAte(v.aqData.slice(0,7),mesAtual())) : null;
+  return {v,acc,compra,kmRod,custoKm:kmRod>0?acc.custo/kmRod:null,recKm:kmRod>0?acc.rec/kmRod:null,
+    roi:compra?acc.res/compra*100:null,med,payback,aluguel,yieldMes:compra&&aluguel?aluguel/compra*100:null,meses,
+    parado:!c && statusVeiculo(v)!=='vendido', status:statusVeiculo(v)};
+}
+function linhasRentab(){ return L('veiculos').filter(v=>statusVeiculo(v)!=='vendido' || resumoFin(x=>x===v.id,()=>true).rec).map(rentabVeiculo).sort((a,b)=>b.acc.res-a.acc.res); }
+function vRentab(){
+  const rs=linhasRentab(); if(!rs.length) return '<div class="tw"><div class="empty">Cadastre veículos para ver a rentabilidade.</div></div>';
+  const ativos=rs.filter(r=>r.status!=='vendido'); const tot=rs.reduce((s,r)=>s+r.acc.res,0); const cap=ativos.reduce((s,r)=>s+r.compra,0);
+  const ys=ativos.filter(r=>r.yieldMes!=null); const yMed=ys.length? ys.reduce((s,r)=>s+r.aluguel,0)/ys.reduce((s,r)=>s+r.compra,0)*100 : null;
+  const parados=ativos.filter(r=>r.parado); const melhor=rs[0], pior=rs[rs.length-1];
+  const mx=Math.max(1,...rs.map(r=>Math.abs(r.acc.res)));
+  const pb=r=>r.payback==null?'<span class="muted">—</span>':r.payback===0?'<span class="pill p-ok">Já se pagou</span>':nf(r.payback,0)+' mês(es)';
+  return `<div class="stack"><div class="kpis">${kpi('Resultado acumulado da frota',`<em class="${tot<0?'neg':''}">${money(tot)}</em>`,'receita menos custos, desde o início')}${kpi('Capital na frota',money(cap),'compra + preparação dos carros ativos')}${kpi('Aluguel ÷ preço do carro',pct(yMed,2),'por mês, média dos carros alugados')}${kpi('Melhor carro',esc(PL(melhor.v.id)),money(melhor.acc.res))}${rs.length>1?kpi('Pior carro',esc(PL(pior.v.id)),`<em class="${pior.acc.res<0?'neg':''}">${money(pior.acc.res)}</em>`):''}${kpi('Carros sem contrato',parados.length,parados.length?parados.map(r=>PL(r.v.id)).join(', '):'todos alugados')}</div>
+  <section><h3>Ranking por resultado acumulado</h3>${tabela([
+    {h:'Veículo',f:r=>placaHTML(r.v)+` <small class="muted">${esc(r.v.modelo||'')}</small>${r.parado?' <span class="pill p-warn">Sem contrato</span>':''}${r.status==='vendido'?' <span class="pill">Vendido</span>':''}`},
+    {h:'Resultado acumulado',f:r=>`<div style="min-width:150px"><b style="color:${r.acc.res<0?'var(--danger)':'inherit'}">${money(r.acc.res)}</b>${barra(r.acc.res,mx,r.acc.res<0)}</div>`},
+    {h:'Receita',n:1,f:r=>money(r.acc.rec)},{h:'Custos',n:1,f:r=>money(r.acc.custo)},{h:'Margem',n:1,f:r=>pct(r.acc.mg)},
+    {h:'Km rodado',n:1,f:r=>r.kmRod?kmf(r.kmRod):'—'},{h:'Custo por km',n:1,f:r=>r.custoKm!=null?money(r.custoKm):'—'},
+    {h:'Aluguel ÷ compra',n:1,f:r=>r.yieldMes!=null?pct(r.yieldMes,2)+'/mês':'—'},{h:'Retorno sobre a compra',n:1,f:r=>pct(r.roi,1)},
+    {h:'Resultado médio (3 meses)',n:1,f:r=>r.med!=null?money(r.med):'—'},{h:'Falta para se pagar',n:1,f:pb}],
+    rs,'Sem dados.',r=>`data-go="veiculo" data-id="${r.v.id}" data-tab="fin"`)}</section>
+  <div class="note i"><b>Como ler:</b> "Retorno sobre a compra" é o resultado acumulado dividido pelo que o carro custou. "Falta para se pagar" é uma estimativa: quanto ainda falta do preço de compra, dividido pelo resultado médio dos últimos 3 meses. A revenda futura do carro não entra na conta.</div></div>`;
+}
+
+/* ---------- fluxo de caixa projetado ---------- */
+function fluxoProjetado(n){
+  const m0=mesAtual(); const ms=[]; for(let i=0;i<n;i++) ms.push(mesMais(m0,i));
+  const mesVenc=d=>{ const m=(d||'').slice(0,7); return !m||m<m0 ? m0 : m; };
+  const linhas=ms.map(m=>({m,entFat:0,entPrev:0,saiContas:0,saiRec:0,atrasoE:0,atrasoS:0,itens:[]}));
+  const at=m=>linhas.find(l=>l.m===m);
+  for(const f of L('faturas').filter(f=>f.status==='aberta')){ const l=at(mesVenc(f.vencimento)); if(!l) continue; l.entFat+=(+f.total||0); if(f.vencimento<hoje()) l.atrasoE+=(+f.total||0); }
+  for(const c of L('contratos').filter(c=>c.status!=='encerrado' && c.inicio)){
+    for(const l of linhas){ const comp=mesMais(l.m,-1); if(comp<c.inicio.slice(0,7) || (c.fim && comp>c.fim.slice(0,7))) continue;
+      if(fatAtivas().some(f=>f.contratoId===c.id && f.competencia===comp)) continue; l.entPrev+=(+c.aluguel||0); } }
+  for(const c of L('contas').filter(c=>c.status==='aberta')){ const l=at(mesVenc(c.vencimento)); if(!l) continue; l.saiContas+=(+c.valor||0); if(contaVencida(c)) l.atrasoS+=(+c.valor||0); }
+  for(const r of L('recorrencias').filter(r=>r.ativa && r.inicio)){
+    for(const l of linhas){ if(l.m<r.inicio || (r.fim && l.m>r.fim)) continue; if(Store.docs['contas/rc_'+r.id+'_'+l.m.replace('-','')]) continue; l.saiRec+=(+r.valor||0); } }
+  let acc=0; for(const l of linhas){ l.ent=l.entFat+l.entPrev; l.sai=l.saiContas+l.saiRec; l.saldo=l.ent-l.sai; acc+=l.saldo; l.acc=acc; }
+  return linhas;
+}
+function lerSaldoCaixa(){ try{ return localStorage.getItem('f2_saldo_caixa')||''; }catch(e){ return ''; } }
+function vFluxo(){
+  const ls=fluxoProjetado(6); const s0=+lerSaldoCaixa()||0; ls.forEach(l=>l.accS=l.acc+s0);
+  const ent=ls.reduce((s,l)=>s+l.ent,0), sai=ls.reduce((s,l)=>s+l.sai,0); const pior=ls.reduce((a,l)=>l.accS<a.accS?l:a,ls[0]);
+  const mx=Math.max(1,...ls.map(l=>Math.max(l.ent,l.sai))); const W=720,H=210,pl=82,pr=12,pt=14,pb=30; const gw=(W-pl-pr)/ls.length, bw=Math.min(26,gw/3.4);
+  const mn=Math.min(0,...ls.map(l=>l.accS)), mxA=Math.max(mx,...ls.map(l=>l.accS)); const Y=v=>H-pb-((v-mn)/(mxA-mn||1))*(H-pt-pb);
+  const ticks=[mn,(mn+mxA)/2,mxA]; const pts=ls.map((l,i)=>`${(pl+gw*i+gw/2).toFixed(1)},${Y(l.accS).toFixed(1)}`).join(' ');
+  const svg=`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Entradas, saídas e saldo acumulado previstos">${ticks.map(t=>`<line x1="${pl}" x2="${W-pr}" y1="${Y(t)}" y2="${Y(t)}" stroke="var(--line)"/><text x="${pl-8}" y="${Y(t)+4}" text-anchor="end" font-size="11" fill="var(--muted)">${eixoR(t)}</text>`).join('')}
+    ${mn<0?`<line x1="${pl}" x2="${W-pr}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--muted)" stroke-dasharray="3 3"/>`:''}
+    ${ls.map((l,i)=>{ const x=pl+gw*i+gw/2; return `<rect x="${x-bw-2}" y="${Y(l.ent)}" width="${bw}" height="${Math.max(0,Y(0)-Y(l.ent))}" rx="3" fill="var(--accent)"><title>${mesbr(l.m)} · entradas ${money(l.ent)}</title></rect><rect x="${x+2}" y="${Y(l.sai)}" width="${bw}" height="${Math.max(0,Y(0)-Y(l.sai))}" rx="3" fill="var(--amber)"><title>${mesbr(l.m)} · saídas ${money(l.sai)}</title></rect><text x="${x}" y="${H-10}" text-anchor="middle" font-size="11" fill="var(--muted)">${mesbr(l.m)}</text>`; }).join('')}
+    <polyline points="${pts}" fill="none" stroke="var(--info)" stroke-width="2.5"/>${ls.map((l,i)=>`<circle cx="${pl+gw*i+gw/2}" cy="${Y(l.accS)}" r="4" fill="var(--info)"><title>${mesbr(l.m)} · saldo acumulado ${money(l.accS)}</title></circle>`).join('')}</svg>`;
+  return `<div class="stack"><div class="kpis">${kpi('Entradas previstas',money(ent),'6 meses')}${kpi('Saídas previstas',money(sai),'6 meses')}${kpi('Saldo do período',`<em class="${ent-sai<0?'neg':''}">${money(ent-sai)}</em>`,'')}${kpi('Mês mais apertado',mesbr(pior.m),`saldo acumulado <em class="${pior.accS<0?'neg':''}">${money(pior.accS)}</em>`)}</div>
+  <div class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h3 style="margin:0">Previsão mês a mês</h3><div class="row" style="gap:14px;font-size:12.5px"><span><span class="lg" style="background:var(--accent)"></span> Entradas</span><span><span class="lg" style="background:var(--amber)"></span> Saídas</span><span><span class="lg" style="background:var(--info)"></span> Saldo acumulado</span></div></div>${svg}
+  <div class="row" style="margin-top:8px"><label class="row muted" for="fx_s">Saldo em conta hoje (opcional) <input id="fx_s" type="number" step="0.01" class="btn" style="font-weight:500;width:150px" value="${esc(lerSaldoCaixa())}" placeholder="0,00"></label><small class="muted">Fica salvo só neste aparelho.</small></div></div>
+  <section><h3>Detalhe</h3>${tabela([{h:'Mês',f:l=>`<b>${mesbr(l.m)}</b>`},{h:'Faturas em aberto',n:1,f:l=>money(l.entFat)+(l.atrasoE?`<br><small class="neg">${money(l.atrasoE)} em atraso</small>`:'')},{h:'Aluguéis a faturar',n:1,f:l=>money(l.entPrev)},
+    {h:'Contas a pagar',n:1,f:l=>money(l.saiContas)+(l.atrasoS?`<br><small class="neg">${money(l.atrasoS)} vencidas</small>`:'')},{h:'Fixas recorrentes',n:1,f:l=>money(l.saiRec)},
+    {h:'Saldo do mês',n:1,f:l=>`<b style="color:${l.saldo<0?'var(--danger)':'inherit'}">${money(l.saldo)}</b>`},{h:'Saldo acumulado',n:1,f:l=>`<b style="color:${l.accS<0?'var(--danger)':'inherit'}">${money(l.accS)}</b>`}],ls,'Sem dados.')}</section>
+  <div class="note i"><b>De onde vêm os números:</b> entradas são as faturas em aberto (pelo vencimento) e o aluguel dos contratos ativos que ainda vão ser faturados (a fatura vence no mês seguinte ao de uso). Saídas são as contas a pagar lançadas e as contas fixas recorrentes dos próximos meses. Atrasados entram no mês atual. É uma previsão: não inclui reajustes, km excedente, multas nem custos ainda não lançados.</div></div>`;
+}
+
+/* ---------- clientes e risco ---------- */
+function riscoClientes(){
+  const h=hoje(), m0=mesAtual(), m12=mesMais(m0,-11);
+  const cs=L('clientes'); const conts=L('contratos'); const fats=fatAtivas();
+  const mensalTot=conts.filter(c=>contratoAtivo(c)).reduce((s,c)=>s+(+c.aluguel||0),0);
+  const rs=cs.map(cl=>{
+    const k=conts.filter(c=>c.clienteId===cl.id); const ka=k.filter(c=>contratoAtivo(c)); const vids=new Set(k.map(c=>c.veiculoId));
+    const mensal=ka.reduce((s,c)=>s+(+c.aluguel||0),0);
+    const f=fats.filter(x=>x.clienteId===cl.id); const f12=f.filter(x=>x.competencia>=m12 && x.competencia<=m0);
+    const rec12=f12.reduce((s,x)=>s+receitaFatura(x),0);
+    const atr=f.filter(x=>x.status==='aberta' && x.vencimento && x.vencimento<h); const vAtr=atr.reduce((s,x)=>s+(+x.total||0),0);
+    const dias=atr.length? Math.max(...atr.map(x=>Math.round((new Date(h+'T12:00')-new Date(x.vencimento+'T12:00'))/864e5))) : 0;
+    const pagas=f.filter(x=>x.status==='paga' && x.vencimento); const noPrazo=pagas.filter(x=>(x.pagoEm||'')<=x.vencimento).length;
+    const pont=pagas.length? noPrazo/pagas.length*100 : null;
+    const vence=ka.filter(c=>c.fim && c.fim<=addDias(h,90)).sort((a,b)=>a.fim<b.fim?-1:1);
+    const multas=L('multas').filter(x=>vids.has(x.veiculoId) && x.statusRepasse==='a_repassar' && +x.valor>0 && k.some(c=>c.veiculoId===x.veiculoId && (x.dataHora||'').slice(0,10)>=c.inicio && (!c.fim||(x.dataHora||'').slice(0,10)<=c.fim)));
+    const chs=L('chamados').filter(x=>(x.clienteId===cl.id) && !['resolvido','encerrado'].includes(x.status));
+    const share=mensalTot? mensal/mensalTot*100 : 0;
+    const motivos=[]; let pts=0;
+    if(atr.length){ pts+= dias>30?3:2; motivos.push(`${atr.length} fatura(s) em atraso há até ${dias} dia(s)`); }
+    if(pont!=null && pont<70 && pagas.length>=2){ pts+=1; motivos.push(`paga no prazo só ${nf(pont)}% das vezes`); }
+    if(share>=40 && ka.length){ pts+=1; motivos.push(`concentra ${nf(share)}% do aluguel mensal`); }
+    if(vence.length){ pts+=1; motivos.push(`${vence.length} contrato(s) terminam até ${dbr(vence[vence.length-1].fim)}`); }
+    if(multas.length){ motivos.push(`${multas.length} multa(s) a repassar`); }
+    const nivel = !ka.length && !atr.length ? 'inativo' : pts>=3?'alto':pts>=1?'medio':'baixo';
+    return {cl,ka,mensal,rec12,vAtr,dias,atr,pont,pagas:pagas.length,vence,multas,vMultas:multas.reduce((s,x)=>s+(+x.valor||0),0),chs,share,motivos,nivel,pts};
+  }).filter(r=>r.ka.length||r.rec12||r.vAtr);
+  return rs.sort((a,b)=>b.pts-a.pts || b.mensal-a.mensal);
+}
+const NIVEL={alto:['p-bad','Alto'],medio:['p-warn','Médio'],baixo:['p-ok','Baixo'],inativo:['','Sem contrato']};
+function vRisco(){
+  const rs=riscoClientes(); if(!rs.length) return '<div class="tw"><div class="empty">Nenhum cliente com contrato ou fatura ainda.</div></div>';
+  const rec12=rs.reduce((s,r)=>s+r.rec12,0); const atr=rs.reduce((s,r)=>s+r.vAtr,0); const fat12=fatAtivas().filter(f=>f.competencia>=mesMais(mesAtual(),-11)).reduce((s,f)=>s+(+f.total||0),0);
+  const maior=rs.slice().sort((a,b)=>b.share-a.share)[0]; const vence=rs.flatMap(r=>r.vence); const emRisco=vence.reduce((s,c)=>s+(+c.aluguel||0),0);
+  const mx=Math.max(1,...rs.map(r=>r.mensal));
+  return `<div class="stack"><div class="kpis">${kpi('Receita dos últimos 12 meses',money(rec12),rs.length+' cliente(s)')}${kpi('Maior cliente',`<span class="kpitx">${esc(maior.cl.nome)}</span>`,pct(maior.share)+' do aluguel mensal')}${kpi('Em atraso',`<em class="${atr?'neg':''}">${money(atr)}</em>`,fat12?pct(atr/fat12*100,1)+' do faturado em 12 meses':'')}${kpi('Contratos terminando em 90 dias',vence.length,vence.length?money(emRisco)+'/mês para renovar':'nenhum')}${kpi('Clientes em risco alto',rs.filter(r=>r.nivel==='alto').length,rs.filter(r=>r.nivel==='medio').length+' em risco médio')}</div>
+  <section><h3>Clientes</h3>${tabela([
+    {h:'Cliente',f:r=>`<b style="display:inline-block;min-width:170px">${esc(r.cl.nome)}</b><br><small class="muted">${r.ka.length} carro(s)</small>`},
+    {h:'Risco',f:r=>`<span class="pill ${NIVEL[r.nivel][0]}">${NIVEL[r.nivel][1]}</span>`},
+    {h:'Aluguel mensal',f:r=>`<div style="min-width:130px"><b>${money(r.mensal)}</b> <small class="muted">${pct(r.share)}</small>${barra(r.mensal,mx)}</div>`},
+    {h:'Receita 12 meses',n:1,f:r=>money(r.rec12)},
+    {h:'Em atraso',n:1,f:r=>r.vAtr?`<b class="neg">${money(r.vAtr)}</b><br><small class="muted">até ${r.dias} dia(s)</small>`:'—'},
+    {h:'Paga no prazo',n:1,f:r=>r.pagas?pct(r.pont)+`<br><small class="muted">${r.pagas} fatura(s)</small>`:'—'},
+    {h:'Contrato termina',f:r=>r.vence.length?r.vence.map(c=>`${dbr(c.fim)} · ${esc(PL(c.veiculoId))}`).join('<br>'):'—'},
+    {h:'Multas a repassar',n:1,f:r=>r.multas.length?money(r.vMultas):'—'},{h:'Chamados abertos',n:1,f:r=>r.chs.length||'—'},
+    {h:'Por quê',f:r=>r.motivos.length?`<small>${r.motivos.map(esc).join('<br>')}</small>`:'<small class="muted">Nada a observar</small>'}],
+    rs,'Sem dados.',r=>`data-go="cliente" data-id="${r.cl.id}"`)}</section>
+  <div class="note i"><b>Como o risco é calculado:</b> fatura em atraso pesa mais (acima de 30 dias, ainda mais); também contam pagar no prazo menos de 70% das vezes, concentrar 40% ou mais do aluguel mensal e ter contrato terminando nos próximos 90 dias.</div></div>`;
+}
+
+/* ===================== assistente (chat com o Claude) ===================== */
+/* O modelo só lê o que este usuário já pode ver (as mesmas regras do banco) e nunca grava sozinho:
+   para lançar algo, ele prepara o formulário e a pessoa confere e clica em Salvar. */
+const AG={msgs:[],ui:[],ocupado:false,aberto:false,status:null,cards:{},seq:0};
+const agPode = () => !!S.me && (ehEquipe() || ehGestor());
+const agFin = () => ehEquipe() && pode('resultado');
+const normPlaca = s => String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+const AG_DATA={usos:'inicio',leituras:'data',abastecimentos:'data',vistorias:'criadoEm',chamados:'criadoEm',manutencoes:'data',reembolsos:'criadoEm',multas:'dataHora',documentos:'vencimento',faturas:'competencia',contas:'vencimento',lancamentos:'competencia',contratos:'inicio',recorrencias:'inicio',pacotes:'solicitadoEm',condutores:'nome',clientes:'nome',veiculos:'placa'};
+function agColecoes(){
+  if(ehGestor()) return ['veiculos','contratos','usos','leituras','abastecimentos','vistorias','chamados','manutencoes','reembolsos','multas','documentos','pacotes','faturas','condutores'];
+  const base=['veiculos','clientes','contratos','condutores','usos','leituras','abastecimentos','vistorias','chamados','manutencoes','reembolsos','multas','documentos','pacotes'];
+  return agFin() ? base.concat(['faturas','contas','recorrencias','lancamentos']) : base;
+}
+function agForms(){
+  if(ehGestor()) return {p_manut:'pedir autorização de manutenção à F2',p_preventiva:'registrar serviço já feito pelo cliente (óleo, revisão, alinhamento)',p_km:'informar o km do odômetro',p_reembolso:'pedir reembolso',p_documento:'enviar documento à F2',p_condutor:'cadastrar motorista'};
+  const f={chamados:'abrir chamado',leituras:'lançar leitura de km',abastecimentos:'registrar abastecimento',manutencoes:'registrar manutenção',multas:'registrar multa',documentos:'documento do carro (IPVA, seguro, licenciamento)',reembolsos:'reembolso ao cliente',condutores:'cadastrar motorista',clientes:'cadastrar cliente',veiculos:'cadastrar veículo',contratos:'novo contrato',pacotes:'pacote de km adicional'};
+  if(agFin()) Object.assign(f,{contas:'conta a pagar (fixa ou variável), com centro de custo',recorrencias:'conta fixa que se repete todo mês',lancamentos:'lançamento manual'});
+  return f;
+}
+const agLC = col => ehGestor() ? LC(col) : L(col);
+function agVeic(q){ if(q==null||q==='') return null; const vs=ehGestor()?veicsCli():L('veiculos'); const s=String(q);
+  const x=vs.find(v=>v.id===s); if(x) return x; const p=normPlaca(s); if(!p) return null;
+  return vs.find(v=>normPlaca(v.placa)===p) || (p.length>=3 ? vs.filter(v=>normPlaca(v.placa).includes(p)).length===1 ? vs.find(v=>normPlaca(v.placa).includes(p)) : null : null); }
+function agCli(q){ if(!q) return null; const s=String(q).toLowerCase(); const cs=L('clientes'); return cs.find(c=>c.id===q) || (cs.filter(c=>String(c.nome).toLowerCase().includes(s)).length===1 ? cs.find(c=>String(c.nome).toLowerCase().includes(s)) : null); }
+const AG_OCULTO=/^(cpf|cnh|cnhArquivo|senha|token|foto|fotos|fotoOdometro|nota|nf|boleto|comprovante|anexo|anexos|arquivo|pdf|bo|assinatura|historico|localInicio|localFim|local_gps|geo|cid)$/i;
+function agLimpo(col,d){
+  const o={}; for(const [k,v] of Object.entries(d)){ if(AG_OCULTO.test(k) || v==null || v==='' || k.endsWith('Nome')&&/arquivo|nota|nf|foto/i.test(k)) continue;
+    if(typeof v==='object'){ if(Array.isArray(v) && k==='itens') o[k]=v.map(i=>({desc:i.desc,valor:i.valor,natureza:i.natureza})); else if(Array.isArray(v)&&k==='pacotesOferta') o[k]=v; continue; }
+    o[k]=typeof v==='string'&&v.length>300?v.slice(0,300)+'…':v; }
+  if(d.veiculoId) o.placa=PL(d.veiculoId); if(d.clienteId && col!=='clientes') o.cliente=nomeCliente(d.clienteId);
+  if(d.condutorId||d.condutorNome) o.condutor=nomeCondutor(d);
+  if(col==='contas'||col==='recorrencias') o.centroCusto=centroLbl(d.centro);
+  if(col==='veiculos'){ o.kmAtual=kmAtual(d); o.situacao=VSTATUS[statusVeiculo(d)]||statusVeiculo(d); const c=contratoDoVeiculo(d.id); if(c){ o.cliente=nomeCliente(c.clienteId); o.contratoId=c.id; }
+    const u=usoAberto(d.id); if(u) o.emUsoPor=nomeCondutor(u);
+    if(ehGestor()) for(const k of Object.keys(o)) if(/^(aq|cs|vd)/.test(k)) delete o[k]; }
+  if(col==='condutores' && d.cnh) o.temCnh=true;
+  return o;
+}
+function agConsultar(a){
+  const col=a.colecao; if(!agColecoes().includes(col)) return {erro:'Coleção não disponível para este usuário: '+col};
+  let ds=agLC(col).slice();
+  if(a.veiculo){ const v=agVeic(a.veiculo); if(!v) return {erro:'Veículo não encontrado: '+a.veiculo};
+    ds = col==='veiculos' ? ds.filter(d=>d.id===v.id) : col==='contas'||col==='recorrencias' ? ds.filter(d=>d.centro===v.id) : ds.filter(d=>d.veiculoId===v.id); }
+  if(a.cliente && !ehGestor()){ const c=agCli(a.cliente); if(!c) return {erro:'Cliente não encontrado: '+a.cliente};
+    ds = col==='clientes'? ds.filter(d=>d.id===c.id) : col==='veiculos' ? ds.filter(d=>{const k=contratoDoVeiculo(d.id); return k&&k.clienteId===c.id;}) : ds.filter(d=>d.clienteId===c.id); }
+  if(a.status) ds=ds.filter(d=>String(d.status||d.statusRepasse||'')===a.status);
+  const fd=AG_DATA[col]; const dt=d=>String(d[fd]||d.criadoEm||'');
+  if(a.desde) ds=ds.filter(d=>dt(d).slice(0,a.desde.length)>=a.desde);
+  if(a.ate) ds=ds.filter(d=>dt(d).slice(0,a.ate.length)<=a.ate);
+  if(a.texto){ const t=String(a.texto).toLowerCase(); ds=ds.filter(d=>JSON.stringify(agLimpo(col,d)).toLowerCase().includes(t)); }
+  const alfa=['condutores','clientes','veiculos'].includes(col); ds.sort((x,y)=>alfa? String(dt(x)).localeCompare(String(dt(y))) : dt(x)<dt(y)?1:-1);
+  const lim=Math.min(80,Math.max(1,+a.limite||30));
+  const soma=['valor','total','litros','aluguel'].filter(k=>ds.some(d=>+d[k])).reduce((o,k)=>(o[k]=Math.round(ds.reduce((s,d)=>s+(+d[k]||0),0)*100)/100,o),{});
+  return {colecao:col,total:ds.length,mostrando:Math.min(lim,ds.length),somas:soma,registros:ds.slice(0,lim).map(d=>agLimpo(col,d))};
+}
+function agIndicador(a){
+  const t=a.tipo; const mes=a.mes||mesAtual();
+  if(t==='pendencias'){ const al=ehGestor()?pAlertas():alertas(); return {total:al.length,itens:al.slice(0,40).map(x=>({gravidade:{b:'alta',w:'media',i:'info'}[x.sev]||x.sev,titulo:x.titulo,detalhe:x.detalhe}))}; }
+  if(t==='franquia_km'){ const cs=(ehGestor()?contratosAtivosCli():L('contratos').filter(c=>contratoAtivo(c))).filter(c=>!a.veiculo||(agVeic(a.veiculo)||{}).id===c.veiculoId);
+    return cs.map(c=>{ const k=consumo(c)||{}; return {placa:PL(c.veiculoId),cliente:ehGestor()?undefined:nomeCliente(c.clienteId),periodo:k.p?dbr(k.p.ini)+' a '+dbr(k.p.fim):null,franquia:k.semLimite?'sem limite':k.limite,rodadoEstimado:Math.round(k.est||0),usadoPct:k.pct!=null?Math.round(k.pct):null,saldoKm:k.saldo!=null?Math.round(k.saldo):null,previsaoExcedenteKm:k.excProj!=null?Math.round(k.excProj):null,custoExcedentePrevisto:k.custoExcProj!=null?Math.round(k.custoExcProj):null,esgotaEm:k.dataEsgota?dbr(k.dataEsgota):null}; }); }
+  if(t==='combustivel'){ const vs=(ehGestor()?veicsCli():L('veiculos').filter(v=>statusVeiculo(v)!=='vendido')).filter(v=>!a.veiculo||(agVeic(a.veiculo)||{}).id===v.id);
+    return vs.map(v=>{ const ab=agLC('abastecimentos').filter(x=>x.veiculoId===v.id && (x.data||'').slice(0,7)===mes); const cc=consumoComb(v.id);
+      return {placa:PL(v.id),mes:mesbr(mes),abastecimentos:ab.length,litros:Math.round(ab.reduce((s,x)=>s+(+x.litros||0),0)*10)/10,valor:Math.round(ab.reduce((s,x)=>s+(+x.valor||0),0)*100)/100,mediaKmPorLitro:cc.media?Math.round(cc.media*10)/10:null}; }); }
+  if(t==='visao_geral'){
+    if(ehGestor()){ const vs=veicsCli(); const ab=LC('abastecimentos').filter(x=>(x.data||'').slice(0,7)===mes); const fa=LC('faturas').filter(f=>f.status==='aberta');
+      return {cliente:nomeCliente(S.me.clienteId),veiculos:vs.length,emUsoAgora:vs.filter(v=>usoAberto(v.id)).length,kmNoMes:vs.reduce((s,v)=>s+kmNoPeriodo(v.id,mes+'-01',hoje()),0),combustivelNoMes:Math.round(ab.reduce((s,x)=>s+(+x.valor||0),0)*100)/100,litrosNoMes:Math.round(ab.reduce((s,x)=>s+(+x.litros||0),0)),chamadosAbertos:LC('chamados').filter(c=>!['resolvido','encerrado'].includes(c.status)).length,faturasEmAberto:fa.map(f=>({competencia:mesbr(f.competencia),placa:PL(f.veiculoId),total:f.total,vencimento:dbr(f.vencimento)})),aluguelMensal:contratosAtivosCli().reduce((s,c)=>s+(+c.aluguel||0),0)}; }
+    const vs=L('veiculos'); const ativos=vs.filter(v=>statusVeiculo(v)!=='vendido'); const cs=L('contratos').filter(c=>contratoAtivo(c));
+    const o={hoje:dbr(hoje()),frota:ativos.length,porSituacao:ativos.reduce((m,v)=>{const s=VSTATUS[statusVeiculo(v)]||statusVeiculo(v); m[s]=(m[s]||0)+1; return m;},{}),clientesAtivos:new Set(cs.map(c=>c.clienteId)).size,contratosAtivos:cs.length,aluguelMensal:cs.reduce((s,c)=>s+(+c.aluguel||0),0),chamadosAbertos:L('chamados').filter(c=>!['resolvido','encerrado'].includes(c.status)).length,pendencias:alertas().length};
+    if(agFin()){ const r=resumoFin(()=>true,x=>x===mes); const ab=L('faturas').filter(f=>f.status==='aberta'); const cAb=contasAtivas().filter(c=>c.status==='aberta');
+      Object.assign(o,{totalAReceberContratos:Math.round(cs.reduce((s,c)=>s+aReceberContrato(c),0)),mes:mesbr(mes),receitaMes:r.rec,custoFixoMes:r.fixa,custoVariavelMes:r.variavel,resultadoMes:r.res,margemMesPct:r.mg!=null?Math.round(r.mg*10)/10:null,faturasEmAberto:Math.round(ab.reduce((s,f)=>s+(+f.total||0),0)*100)/100,faturasEmAtraso:ab.filter(f=>f.vencimento<hoje()).length,contasAPagar:Math.round(cAb.reduce((s,c)=>s+(+c.valor||0),0)*100)/100,contasVencidas:cAb.filter(contaVencida).length,capitalNaFrota:ativos.reduce((s,v)=>s+(+v.aqPreco||0)+(+v.aqCustos||0),0)}); }
+    return o; }
+  if(ehGestor() || !agFin()) return {erro:'Indicador não disponível para este usuário.'};
+  if(t==='resultado'){ const v=a.veiculo?agVeic(a.veiculo):null; if(a.veiculo&&!v&&!/^adm/i.test(a.veiculo)) return {erro:'Veículo não encontrado.'};
+    const fc = v? (x=>x===v.id) : a.veiculo ? (x=>x===CENTRO_ADM) : (()=>true); const meses=[]; for(let i=5;i>=0;i--) meses.push(mesMais(mes,-i));
+    const r=x=>{ const q=resumoFin(fc,x); return {receita:Math.round(q.rec*100)/100,custoFixo:Math.round(q.fixa*100)/100,custoVariavel:Math.round(q.variavel*100)/100,resultado:Math.round(q.res*100)/100,margemPct:q.mg!=null?Math.round(q.mg*10)/10:null}; };
+    const out={centroCusto:v?PL(v.id):a.veiculo?'Administrativo':'Empresa toda',mes:mesbr(mes),doMes:r(m=>m===mes),ultimos6Meses:meses.map(m=>({mes:mesbr(m),...r(x=>x===m)})),acumulado:r(()=>true)};
+    if(!a.veiculo) out.porCentroDoMes=[...L('veiculos').map(x=>x.id),CENTRO_ADM].map(c=>({centro:centroLbl(c),...(q=>({receita:q.rec,custo:q.custo,resultado:q.res}))(resumoFin(x=>x===c,m=>m===mes))})).filter(x=>x.receita||x.custo);
+    return out; }
+  if(t==='rentabilidade') return linhasRentab().filter(r=>!a.veiculo||(agVeic(a.veiculo)||{}).id===r.v.id).map(r=>({placa:PL(r.v.id),modelo:r.v.modelo,situacao:VSTATUS[r.status]||r.status,receitaAcumulada:Math.round(r.acc.rec),custosAcumulados:Math.round(r.acc.custo),resultadoAcumulado:Math.round(r.acc.res),precoCompra:r.compra,retornoSobreCompraPct:r.roi!=null?Math.round(r.roi*10)/10:null,kmRodado:r.kmRod,custoPorKm:r.custoKm!=null?Math.round(r.custoKm*100)/100:null,aluguel:r.aluguel,aluguelSobreCompraPctMes:r.yieldMes!=null?Math.round(r.yieldMes*100)/100:null,resultadoMedio3Meses:r.med!=null?Math.round(r.med):null,mesesParaSePagar:r.payback!=null?Math.round(r.payback):null,semContrato:r.parado}));
+  if(t==='fluxo_caixa') return {aviso:'Previsão; não considera saldo em banco, reajustes ou custos não lançados.',meses:fluxoProjetado(+a.meses||6).map(l=>({mes:mesbr(l.m),faturasEmAberto:Math.round(l.entFat),atrasadasNoMes:Math.round(l.atrasoE),alugueisAFaturar:Math.round(l.entPrev),contasAPagar:Math.round(l.saiContas),fixasRecorrentes:Math.round(l.saiRec),saldoDoMes:Math.round(l.saldo),saldoAcumulado:Math.round(l.acc)}))};
+  if(t==='clientes_risco') return riscoClientes().map(r=>({cliente:r.cl.nome,risco:NIVEL[r.nivel][1],carros:r.ka.length,aluguelMensal:r.mensal,participacaoPct:Math.round(r.share),receita12Meses:Math.round(r.rec12),emAtraso:r.vAtr,diasAtraso:r.dias,pagaNoPrazoPct:r.pont!=null?Math.round(r.pont):null,contratosTerminando:r.vence.map(c=>({placa:PL(c.veiculoId),fim:dbr(c.fim)})),multasARepassar:r.vMultas,chamadosAbertos:r.chs.length,motivos:r.motivos}));
+  return {erro:'Indicador desconhecido: '+t};
+}
+/* ---------- formulários que o assistente pode preparar ---------- */
+function agCamposDesc(key){ const sc=SCHEMA[key];
+  return sc.fields.filter(f=>f.k && !f.sec && !['file','files','checklist','plano'].includes(f.t) && (f.t!=='hidden'||f.k==='veiculoId')).map(f=>{
+    let t = f.k==='centro' ? "placa do veículo ou 'adm' (Administrativo)" : f.t==='ref' ? (f.ref==='veiculos'?'placa do veículo':f.ref==='clientes'?'nome do cliente':f.ref==='contratos'?'placa do veículo do contrato':'id de '+f.ref)
+      : f.t==='hidden' ? 'placa do veículo' : f.t==='money'?'valor em R$':f.t==='num'?'número':f.t==='date'?'AAAA-MM-DD':f.t==='dt'?'AAAA-MM-DDTHH:MM':f.t==='month'?'AAAA-MM':f.t==='bool'?'true/false'
+      : f.t==='sel' && f.opts ? 'um de: '+f.opts.map(o=>o.v===''?null:o.v).filter(Boolean).join('|') : 'texto';
+    return `${f.k} (${f.l||'Veículo'}; ${t}${f.req?'; obrigatório':''})`; }).join('; ')
+    + (sc.fields.some(f=>['file','files'].includes(f.t)) ? '. Fotos e arquivos a pessoa anexa no formulário.' : ''); }
+function agNum(v){ if(typeof v==='number') return v; let s=String(v).replace(/[^\d,.\-]/g,''); if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.'); return s===''?'':+s; }
+function agResolver(key, campos){
+  const sc=SCHEMA[key]; const pre={}, avisos=[]; campos=campos||{};
+  for(const f of sc.fields.filter(f=>f.k && !f.sec)){
+    if(!(f.k in campos)) continue; let v=campos[f.k]; if(v==null||v==='') continue;
+    if(['file','files','checklist'].includes(f.t)) continue;
+    if(f.k==='centro'){ if(/^adm/i.test(String(v))) v=CENTRO_ADM; else { const x=agVeic(v); if(!x){ avisos.push('Centro de custo não encontrado: '+v); continue; } v=x.id; } }
+    else if(f.t==='ref'||f.t==='hidden'&&f.k==='veiculoId'){
+      if(f.ref==='clientes'){ const c=agCli(v); if(!c){ avisos.push('Cliente não encontrado: '+v); continue; } v=c.id; }
+      else if(f.ref==='contratos'){ if(!G('contratos',v)){ const x=agVeic(v); const c=x&&contratoDoVeiculo(x.id); if(!c){ avisos.push('Contrato ativo não encontrado para: '+v); continue; } v=c.id; } }
+      else if(f.ref==='veiculos'||f.k==='veiculoId'){ const x=agVeic(v); if(!x){ avisos.push('Veículo não encontrado: '+v); continue; } v=x.id; }
+      else if(!G(f.ref,v)){ avisos.push('Registro não encontrado em '+f.ref+': '+v); continue; } }
+    else if(f.t==='money'||f.t==='num'){ v=agNum(v); if(v===''||isNaN(v)) continue; }
+    else if(f.t==='bool') v = v===true||/^(true|sim|s|1)$/i.test(String(v));
+    else if(f.t==='sel'){ const os=f.optsFn?f.optsFn():(f.opts||[]); const o=os.find(o=>String(o.v)===String(v))||os.find(o=>String(o.l).toLowerCase()===String(v).toLowerCase())||os.find(o=>String(o.l).toLowerCase().includes(String(v).toLowerCase())); if(!o){ avisos.push(`Opção inválida em ${f.l}: ${v}`); continue; } v=o.v; }
+    else if(f.t==='date') v=String(v).slice(0,10); else if(f.t==='month') v=String(v).slice(0,7); else if(f.t==='dt') v=String(v).slice(0,16);
+    else v=String(v).slice(0,2000);
+    pre[f.k]=v; }
+  if(ehCliente() && key.startsWith('p_') && sc.fields.some(f=>f.k==='veiculoId') && !(pre.veiculoId && idsVeic().has(pre.veiculoId))) avisos.push('Informe um veículo do seu contrato.');
+  const tmp={...pre}; const falta=sc.fields.filter(f=>f.req && f.k && !f.sec && !(f.show&&!f.show(tmp)) && !['file','files','checklist'].includes(f.t) && (tmp[f.k]==null||tmp[f.k]==='') && f.def==null && !f.defFn).map(f=>f.l||f.k);
+  return {pre,avisos,falta};
+}
+function agValorTxt(f,v){ if(f.k==='centro') return centroLbl(v); if(f.t==='ref'||f.k==='veiculoId') return f.ref==='clientes'?nomeCliente(v):f.ref==='contratos'?refLabel('contratos',G('contratos',v)||{}):vLbl(G('veiculos',v));
+  if(f.t==='money') return money(v); if(f.t==='date') return dbr(v); if(f.t==='dt') return dtbr(v); if(f.t==='month') return mesbr(v); if(f.t==='bool') return v?'Sim':'Não';
+  if(f.t==='sel'){ const os=f.optsFn?f.optsFn():(f.opts||[]); const o=os.find(o=>String(o.v)===String(v)); return o?o.l:v; } return v; }
+
+/* ---------- ferramentas que o modelo pode usar ---------- */
+function agTools(){
+  const cols=agColecoes(); const forms=Object.keys(agForms());
+  const ind=ehGestor()?['visao_geral','franquia_km','combustivel','pendencias']:agFin()?['visao_geral','resultado','rentabilidade','fluxo_caixa','clientes_risco','franquia_km','combustivel','pendencias']:['visao_geral','franquia_km','combustivel','pendencias'];
+  const t=[
+    {name:'consultar_dados',description:'Lista registros do sistema com filtros. Use para responder perguntas sobre carros, contratos, abastecimentos, chamados, contas etc. Retorna total, somas e até 80 registros.',
+      input_schema:{type:'object',properties:{colecao:{type:'string',enum:cols},veiculo:{type:'string',description:'placa ou parte dela'},cliente:{type:'string',description:'nome do cliente'},texto:{type:'string',description:'busca livre'},status:{type:'string'},desde:{type:'string',description:'AAAA-MM-DD ou AAAA-MM'},ate:{type:'string',description:'AAAA-MM-DD ou AAAA-MM'},limite:{type:'integer'}},required:['colecao']}},
+    {name:'indicadores',description:'Números calculados pelo sistema (os mesmos das telas). visao_geral: resumo da empresa; resultado: receita, custo fixo/variável e resultado por mês (veiculo = placa ou "adm"); rentabilidade: por carro desde a compra; fluxo_caixa: previsão dos próximos meses; clientes_risco: concentração e inadimplência; franquia_km: consumo das franquias; combustivel: litros e gasto do mês; pendencias: avisos do painel.',
+      input_schema:{type:'object',properties:{tipo:{type:'string',enum:ind},mes:{type:'string',description:'AAAA-MM'},veiculo:{type:'string'},meses:{type:'integer'}},required:['tipo']}},
+    {name:'abrir_tela',description:'Leva a pessoa para uma tela do sistema (ex.: a ficha de um carro).',
+      input_schema:{type:'object',properties:{tela:{type:'string',enum:ehGestor()?['inicio','contratos','uso','abast','manut','chamados','faturas','multas','condutores','veiculo']:['painel','clientes','cliente','veiculos','veiculo','receber','fixas','variaveis','resultado','config','auditoria'].filter(v=>['cliente','veiculo'].includes(v)||pode(v))},veiculo:{type:'string',description:'placa, para tela veiculo'},cliente:{type:'string',description:'nome, para tela cliente'},aba:{type:'string',description:'para veiculo: resumo|contrato|uso|km|abast|vist|manut|chamados|docs|multas|fin|historico; para painel: geral|rentab|caixa|clientes'}},required:['tela']}},
+    {name:'preparar_registro',description:'Prepara um formulário já preenchido para a pessoa conferir e salvar. NUNCA grava sozinho. Tipos: '+forms.map(k=>`${k} = ${agForms()[k]}`).join('; ')+'. Campos de cada tipo estão no contexto.',
+      input_schema:{type:'object',properties:{tipo:{type:'string',enum:forms},campos:{type:'object',description:'chave do campo → valor'},resumo:{type:'string',description:'uma frase dizendo o que será lançado'}},required:['tipo','campos','resumo']}}];
+  if(agFin()){ t.push({name:'pagar_conta',description:'Pede confirmação para marcar uma conta a pagar como paga. Descubra o id com consultar_dados (colecao contas, status aberta).',input_schema:{type:'object',properties:{conta_id:{type:'string'},data_pagamento:{type:'string',description:'AAAA-MM-DD; vazio = hoje'}},required:['conta_id']}});
+    t.push({name:'gerar_fatura',description:'Abre a tela de emissão de fatura de um contrato, com a proposta calculada pelo sistema, para a pessoa conferir e emitir.',input_schema:{type:'object',properties:{veiculo:{type:'string',description:'placa do carro do contrato'}},required:['veiculo']}}); }
+  if(ehGestor()) t.push({name:'pedir_km_adicional',description:'Abre os pacotes de km adicional do contrato de um carro para a pessoa escolher e pedir.',input_schema:{type:'object',properties:{veiculo:{type:'string'}},required:['veiculo']}});
+  return t;
+}
+function agContexto(){
+  const g=ehGestor(); const vs=(g?veicsCli():L('veiculos')).slice().sort((a,b)=>String(a.placa).localeCompare(String(b.placa)));
+  const linhasV=vs.map(v=>{ const c=contratoDoVeiculo(v.id); return `${PL(v.id)} | ${v.marca||''} ${v.modelo||''} | ${VSTATUS[statusVeiculo(v)]||statusVeiculo(v)} | km ${Math.round(kmAtual(v))}${c&&!g?' | '+nomeCliente(c.clienteId)+' | aluguel '+(+c.aluguel||0)+' até '+dbr(c.fim):''}${c&&g?' | aluguel '+(+c.aluguel||0)+' até '+dbr(c.fim):''}`; });
+  const forms=agForms();
+  return [`Hoje: ${dbr(hoje())} (${hoje()}), mês ${mesAtual()}.`,
+    `Usuário: ${S.me.nome||S.me.email} · perfil ${lbl(PERFIS,S.me.perfil)}${g?' · cliente '+nomeCliente(S.me.clienteId):''}.`,
+    g ? 'Esta pessoa é o administrativo de um CLIENTE da F2. Ela só vê a frota, os contratos e as faturas da empresa dela. Não fale de custos, margens ou dados internos da F2.' : agFin() ? 'Esta pessoa é da equipe da F2 com acesso ao financeiro.' : 'Esta pessoa é da equipe operacional da F2 e não tem acesso ao financeiro (contas, faturas, resultado).',
+    `Veículos (placa | modelo | situação | km${g?'':' | cliente'} | contrato):\n`+(linhasV.join('\n')||'nenhum'),
+    g ? `Motoristas: ${LC('condutores').map(d=>d.nome+(d.status!=='aprovado'?' ('+d.status+')':'')).join(', ')||'nenhum'}` : `Clientes: ${L('clientes').map(c=>c.nome).join('; ')||'nenhum'}`,
+    'Campos dos formulários (preparar_registro):\n'+Object.keys(forms).map(k=>`- ${k}: ${agCamposDesc(k)}`).join('\n')
+  ].join('\n\n').slice(0,38000);
+}
+async function agExec(u){
+  const a=u.input||{};
+  if(u.name==='consultar_dados') return agConsultar(a);
+  if(u.name==='indicadores') return agIndicador(a);
+  if(u.name==='abrir_tela'){ AG.aberto = window.innerWidth>860; agDesenhar();
+    if(ehGestor()){ if(a.tela==='veiculo'){ const v=agVeic(a.veiculo); if(!v) return {erro:'Veículo não encontrado'}; S.p.vid=v.id; } else { S.p.tab=a.tela; S.p.vid=null; } render(); return {ok:true}; }
+    if(a.tela==='veiculo'){ const v=agVeic(a.veiculo); if(!v) return {erro:'Veículo não encontrado'}; go('veiculo',v.id,a.aba); return {ok:true}; }
+    if(a.tela==='cliente'){ const c=agCli(a.cliente); if(!c) return {erro:'Cliente não encontrado'}; go('cliente',c.id,a.aba); return {ok:true}; }
+    if(!pode(a.tela)) return {erro:'Tela não disponível'}; if(a.tela==='painel'&&a.aba) S.ui.ptab=a.aba; go(a.tela); return {ok:true}; }
+  if(u.name==='preparar_registro'){ const key=a.tipo; if(!agForms()[key]||!SCHEMA[key]) return {erro:'Tipo de registro não permitido: '+key};
+    const r=agResolver(key,a.campos); agCard({tipo:'form',key,pre:r.pre,resumo:a.resumo,avisos:r.avisos,falta:r.falta});
+    return {ok:true,situacao:'Formulário mostrado para a pessoa conferir. Ainda NÃO foi salvo: só será salvo quando ela clicar em Salvar.',camposAceitos:Object.keys(r.pre),avisos:r.avisos,faltaPreencher:r.falta}; }
+  if(u.name==='pagar_conta'){ if(!agFin()) return {erro:'Sem permissão'}; const c=G('contas',a.conta_id); if(!c||c.excluido) return {erro:'Conta não encontrada'}; if(c.status!=='aberta') return {erro:'Esta conta não está em aberto (situação: '+c.status+').'};
+    agCard({tipo:'pagar',id:c.id,data:(a.data_pagamento||hoje()).slice(0,10)}); return {ok:true,situacao:'Pedido de confirmação mostrado. Ainda NÃO foi pago no sistema.'}; }
+  if(u.name==='gerar_fatura'){ if(!agFin()) return {erro:'Sem permissão'}; const v=agVeic(a.veiculo); const c=v&&L('contratos').filter(x=>x.veiculoId===v.id&&x.status!=='encerrado').sort((x,y)=>x.inicio<y.inicio?1:-1)[0]; if(!c) return {erro:'Contrato não encontrado para '+a.veiculo};
+    agCard({tipo:'fatura',id:c.id}); return {ok:true,situacao:'Botão para abrir a emissão mostrado. A fatura só é emitida quando a pessoa confirmar.'}; }
+  if(u.name==='pedir_km_adicional'){ const v=agVeic(a.veiculo); const c=v&&contratoDoVeiculo(v.id); if(!c||c.clienteId!==S.me.clienteId) return {erro:'Contrato ativo não encontrado para '+a.veiculo}; agCard({tipo:'pacote',id:c.id}); return {ok:true,situacao:'Botão mostrado; a pessoa escolhe o pacote.'}; }
+  return {erro:'Ferramenta desconhecida'};
+}
+/* ---------- conversa ---------- */
+function agHist(){ const ms=AG.msgs; let ini=0, n=0; for(let i=ms.length-1;i>=0;i--){ if(ms[i].role==='user' && typeof ms[i].content==='string'){ n++; if(n>=10){ ini=i; break; } } } return ms.slice(ini); }
+async function agChamar(){
+  let tok=''; try{ tok=(await Supa.sb.auth.getSession()).data.session.access_token; }catch(e){}
+  const r=await fetch('/api/agente',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok},body:JSON.stringify({messages:agHist(),tools:agTools(),contexto:agContexto()})});
+  let j={}; try{ j=await r.json(); }catch(e){}
+  if(!r.ok) throw {status:r.status,...j};
+  return j;
+}
+function agErro(e){ const s=e&&e.status; if(e&&e.erro==='sem_chave') return 'O assistente ainda não foi ligado: falta colocar a chave da Anthropic na Vercel (passo a passo no LEIA-ME, item "Assistente").';
+  if(s===401||s===403) return 'Seu usuário não tem acesso ao assistente.'; if(s===429||(e&&e.status_api===429)) return 'Muitas mensagens em pouco tempo. Espere um minuto e tente de novo.';
+  if(e&&e.erro==='credito') return 'A conta da Anthropic está sem crédito. Coloque crédito em console.anthropic.com → Billing.';
+  return 'Não consegui falar com o assistente agora'+(e&&e.detalhe?' ('+e.detalhe+')':'')+'. Tente de novo em instantes.'; }
+async function agEnviar(txt){
+  txt=String(txt||'').trim(); if(!txt||AG.ocupado) return; AG.ocupado=true;
+  const nota=AG.pend; AG.pend='';
+  AG.msgs.push({role:'user',content:nota?nota+'\n\n'+txt:txt}); AG.ui.push({de:'eu',txt}); agDesenhar();
+  try{
+    for(let i=0;i<8;i++){
+      const r=await agChamar(); const content=(r.content||[]).filter(b=>b.type==='text'||b.type==='tool_use');
+      if(!content.length){ AG.ui.push({de:'ag',txt:'(sem resposta)'}); break; }
+      AG.msgs.push({role:'assistant',content});
+      for(const b of content) if(b.type==='text' && b.text.trim()) AG.ui.push({de:'ag',txt:b.text});
+      const uses=content.filter(b=>b.type==='tool_use'); if(!uses.length) break;
+      AG.ui.push({de:'sis',txt:uses.map(u=>({consultar_dados:'Consultando '+((u.input||{}).colecao||'dados'),indicadores:({visao_geral:'Lendo o resumo da empresa',resultado:'Calculando o resultado',rentabilidade:'Calculando a rentabilidade',fluxo_caixa:'Calculando o fluxo de caixa',clientes_risco:'Analisando os clientes',franquia_km:'Vendo as franquias de km',combustivel:'Somando o combustível',pendencias:'Vendo as pendências'})[(u.input||{}).tipo]||'Calculando',abrir_tela:'Abrindo a tela',preparar_registro:'Preparando o formulário',pagar_conta:'Preparando o pagamento',gerar_fatura:'Preparando a fatura',pedir_km_adicional:'Abrindo os pacotes'}[u.name]||u.name)).join(' · ')}); agDesenhar();
+      const res=[]; for(const u of uses){ let out; try{ out=await agExec(u); }catch(ex){ out={erro:errMsg(ex)}; } res.push({type:'tool_result',tool_use_id:u.id,content:JSON.stringify(out).slice(0,40000)}); }
+      AG.msgs.push({role:'user',content:res});
+      if(i===7) AG.ui.push({de:'ag',txt:'Parei aqui para não demorar demais. Pode me pedir para continuar.'});
+    }
+  }catch(e){ AG.ui.push({de:'erro',txt:agErro(e)}); const k=AG.msgs.map(m=>m.role==='user'&&typeof m.content==='string').lastIndexOf(true); if(k>=0) AG.msgs.length=k; }
+  AG.ocupado=false; agDesenhar();
+}
+function agCard(c){ c.n=++AG.seq; AG.cards[c.n]=c; AG.ui.push({de:'card',n:c.n}); agDesenhar(); }
+function agCardHTML(c){
+  const fim=c.feito?`<div class="agok">${esc(c.feito)}</div>`:'';
+  if(c.tipo==='form'){ const sc=SCHEMA[c.key];
+    const linhas=sc.fields.filter(f=>f.k && c.pre[f.k]!=null && c.pre[f.k]!=='').map(f=>`<div><dt>${esc(f.l||'Veículo')}</dt><dd>${esc(agValorTxt(f,c.pre[f.k]))}</dd></div>`).join('');
+    return `<div class="agcard"><b>${esc(sc.titulo)}</b>${c.resumo?`<p>${esc(c.resumo)}</p>`:''}<dl>${linhas}</dl>${c.avisos.length?`<p class="neg">${c.avisos.map(esc).join('<br>')}</p>`:''}${c.falta.length?`<p class="muted">Falta preencher: ${c.falta.map(esc).join(', ')}.</p>`:''}${fim||`<button class="btn pri sm" data-agc="${c.n}">Conferir e salvar</button>`}</div>`; }
+  if(c.tipo==='pagar'){ const k=G('contas',c.id)||{}; return `<div class="agcard"><b>Pagar conta</b><dl><div><dt>Conta</dt><dd>${esc(k.descricao)}</dd></div><div><dt>Centro de custo</dt><dd>${esc(centroLbl(k.centro))}</dd></div><div><dt>Valor</dt><dd>${money(k.valor)}</dd></div><div><dt>Vencimento</dt><dd>${dbr(k.vencimento)}</dd></div></dl>${fim||`<div class="row"><input type="date" id="agd_${c.n}" value="${esc(c.data)}" class="btn sm"><button class="btn pri sm" data-agc="${c.n}">Marcar como paga</button></div>`}</div>`; }
+  if(c.tipo==='fatura'){ const k=G('contratos',c.id)||{}; return `<div class="agcard"><b>Emitir fatura</b><p>${esc(PL(k.veiculoId))} · ${esc(nomeCliente(k.clienteId))}</p>${fim||`<button class="btn pri sm" data-agc="${c.n}">Abrir a fatura para conferir</button>`}</div>`; }
+  if(c.tipo==='pacote'){ const k=G('contratos',c.id)||{}; return `<div class="agcard"><b>Km adicional</b><p>${esc(PL(k.veiculoId))}</p>${fim||`<button class="btn pri sm" data-agc="${c.n}">Ver pacotes</button>`}</div>`; }
+  return '';
+}
+async function agAcao(n){
+  const c=AG.cards[n]; if(!c||c.feito) return;
+  try{
+    if(c.tipo==='form'){ AG.esperando={n,key:c.key}; if(window.innerWidth<=860){ AG.aberto=false; agDesenhar(); } openForm(c.key,null,c.pre); return; }
+    if(c.tipo==='pagar'){ const k=G('contas',c.id); if(!k||k.status!=='aberta'){ c.feito='Esta conta já não está em aberto.'; agDesenhar(); return; } const dt=($('#agd_'+n)||{}).value||hoje();
+      await SCHEMA.contas.save({...k,status:'paga',pagoEm:dt},c.id,k); c.feito='Paga em '+dbr(dt)+'.'; agNota(`[sistema] A pessoa confirmou: conta "${k.descricao}" marcada como paga em ${dbr(dt)}.`); toast('Conta paga.'); agDesenhar(); return; }
+    if(c.tipo==='fatura'){ openGerarFatura(c.id); return; }
+    if(c.tipo==='pacote'){ openPacotePortal(c.id); return; }
+  }catch(ex){ toast(errMsg(ex)); }
+}
+/* Avisa o modelo, na próxima mensagem, do que a pessoa confirmou. */
+function agNota(t){ AG.pend=(AG.pend?AG.pend+'\n':'')+t; }
+window.addEventListener('f2salvo',e=>{ const w=AG.esperando; if(!w || e.detail.key!==w.key) return; const c=AG.cards[w.n]; AG.esperando=null; if(c){ c.feito='Salvo.'; agNota(`[sistema] A pessoa conferiu e salvou o formulário "${SCHEMA[c.key].titulo}".`); } if(window.innerWidth<=860) AG.aberto=true; agDesenhar(); });
+function agMd(t){ let h=esc(t);
+  h=h.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<i>$2</i>').replace(/`([^`]+)`/g,'<code>$1</code>');
+  const ls=h.split('\n'); let out='', lista=null;
+  for(const l of ls){ const m=l.match(/^\s*(?:[-•*]|\d+[.)])\s+(.*)/); if(m){ if(!lista){ lista=true; out+='<ul>'; } out+='<li>'+m[1]+'</li>'; continue; } if(lista){ out+='</ul>'; lista=null; }
+    if(/^\s*\|.*\|\s*$/.test(l)){ if(/^\s*\|[\s:|-]+\|\s*$/.test(l)) continue; out+='<div class="agtr">'+l.trim().slice(1,-1).split('|').map(x=>'<span>'+x.trim()+'</span>').join('')+'</div>'; continue; }
+    const hm=l.match(/^#{1,4}\s+(.*)/); out+= hm?'<b>'+hm[1]+'</b><br>' : l.trim()?l+'<br>':'<br>'; }
+  if(lista) out+='</ul>'; return out.replace(/(<br>){3,}/g,'<br><br>'); }
+const AG_SUG_F2=['Como está a empresa este mês?','Quais carros dão mais lucro?','Como fica o caixa nos próximos meses?','Lança uma conta de R$ 350 de pneu no carro …'];
+const AG_SUG_OP=['Quais as pendências de hoje?','Quem está com cada carro?','Abre um chamado para o carro …','Quanto de km cada contrato já usou?'];
+const AG_SUG_CLI=['Quanto gastamos de combustível este mês?','Quanto de km ainda temos na franquia?','Abre um pedido de manutenção para o carro …','Cadastra o motorista …'];
+function agDesenhar(){
+  let b=$('#agbtn'), p=$('#agpan');
+  if(!agPode()){ if(b) b.hidden=true; if(p) p.hidden=true; return; }
+  if(!b){ b=document.createElement('button'); b.id='agbtn'; b.type='button'; b.setAttribute('aria-label','Abrir o assistente'); b.innerHTML='<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 10h8M8 13h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Assistente</span>'; document.body.appendChild(b);
+    b.onclick=()=>{ AG.aberto=!AG.aberto; agDesenhar(); if(AG.aberto){ agStatus(); setTimeout(()=>{ const i=$('#agin'); if(i) i.focus(); },50); } }; }
+  if(!p){ p=document.createElement('aside'); p.id='agpan'; p.setAttribute('aria-label','Assistente'); document.body.appendChild(p);
+    p.addEventListener('click',e=>{ const x=e.target.closest('[data-agc]'); if(x){ agAcao(+x.dataset.agc); return; } const s=e.target.closest('[data-agsug]'); if(s){ const i=$('#agin'); const t=s.dataset.agsug; if(t.endsWith('…')){ i.value=t.slice(0,-1); i.focus(); } else agEnviar(t); return; }
+      if(e.target.closest('[data-agx]')){ AG.aberto=false; agDesenhar(); } if(e.target.closest('[data-agnovo]')){ AG.msgs=[]; AG.ui=[]; AG.cards={}; AG.pend=''; agDesenhar(); } });
+    p.addEventListener('submit',e=>{ e.preventDefault(); const i=$('#agin'); const t=i.value; i.value=''; agEnviar(t); });
+    p.addEventListener('keydown',e=>{ if(e.target.id==='agin' && e.key==='Enter' && !e.shiftKey){ e.preventDefault(); p.querySelector('form').requestSubmit(); } if(e.key==='Escape'){ AG.aberto=false; agDesenhar(); } }); }
+  b.hidden=AG.aberto; p.hidden=!AG.aberto; document.body.classList.toggle('ag-on',AG.aberto);
+  if(!AG.aberto) return;
+  const sug=ehGestor()?AG_SUG_CLI:agFin()?AG_SUG_F2:AG_SUG_OP;
+  const off=AG.status&&!AG.status.chave;
+  const msgs=AG.ui.map(m=>m.de==='eu'?`<div class="agm eu">${esc(m.txt)}</div>`:m.de==='ag'?`<div class="agm ag">${agMd(m.txt)}</div>`:m.de==='sis'?`<div class="agm sis">${esc(m.txt)}…</div>`:m.de==='erro'?`<div class="agm erro">${esc(m.txt)}</div>`:m.de==='card'?agCardHTML(AG.cards[m.n]):'').join('');
+  const vazio=`<div class="agvazio"><b>Olá, ${esc((S.me.nome||'').split(' ')[0]||'tudo bem')}!</b><p>Pergunte qualquer coisa sobre ${ehGestor()?'a sua frota':'a empresa'} ou peça para lançar algo. Antes de salvar, eu sempre mostro o formulário preenchido para você conferir.</p><div class="agsug">${sug.map(s=>`<button type="button" data-agsug="${esc(s)}">${esc(s)}</button>`).join('')}</div></div>`;
+  const val=($('#agin')||{}).value||''; const foco=document.activeElement&&document.activeElement.id==='agin';
+  p.innerHTML=`<header><div><b>Assistente</b><small>${ehGestor()?esc(nomeCliente(S.me.clienteId)):'F2 Conect'}</small></div><div class="row" style="gap:4px">${AG.ui.length?'<button type="button" class="btn ghost sm" data-agnovo>Nova conversa</button>':''}<button type="button" class="btn ghost sm" data-agx aria-label="Fechar o assistente">Fechar</button></div></header>
+    <div class="aglog" id="aglog">${off?'<div class="agm erro">O assistente ainda não foi ligado: falta colocar a chave da Anthropic na Vercel. O passo a passo está no LEIA-ME, item "Assistente".</div>':''}${msgs||vazio}${AG.ocupado?'<div class="agm sis agpensa"><i></i><i></i><i></i></div>':''}</div>
+    <form class="agform"><textarea id="agin" rows="2" placeholder="Escreva sua mensagem…" aria-label="Mensagem para o assistente" ${AG.ocupado?'disabled':''}></textarea><button class="btn pri" type="submit" ${AG.ocupado?'disabled':''}>Enviar</button></form>
+    <small class="agrod">O assistente pode errar. Confira os números importantes nas telas.</small>`;
+  const i=$('#agin'); i.value=val; if(foco||!AG.ocupado&&AG.ui.length) { try{ i.focus(); }catch(e){} }
+  const lg=$('#aglog'); lg.scrollTop=lg.scrollHeight;
+}
+async function agStatus(){ if(AG.status) return; try{ const r=await fetch('/api/agente'); AG.status=await r.json(); }catch(e){ AG.status={chave:true}; } agDesenhar(); }
+function agGarantir(){ if(!agPode()){ const b=$('#agbtn'), p=$('#agpan'); if(b) b.hidden=true; if(p) p.hidden=true; document.body.classList.remove('ag-on'); return; }
+  if(!$('#agbtn')) agDesenhar(); else { $('#agbtn').hidden=AG.aberto; $('#agpan').hidden=!AG.aberto; document.body.classList.toggle('ag-on',AG.aberto); } }
+
 /* ===================== render e eventos ===================== */
 const r0=()=>S.route; let _rt=null; function agenda(){ clearTimeout(_rt); _rt=setTimeout(render,40); }
 function render(){
   const main=$('#main');
   if(!S.db || !S.me){ return; }
+  agGarantir();
   if(ehCliente()){ const ae0=document.activeElement; if(document.querySelector('dialog[open]') && ae0 && ae0.closest && ae0.closest('dialog')) { /* mantém o formulário aberto */ } renderPortal(); return; }
   if(!pode(S.route.view)) S.route.view='painel';
   const ae=document.activeElement; if(r0().view==='config' && ae && $('#cfgf') && $('#cfgf').contains(ae)) return;
@@ -1302,6 +1734,7 @@ document.addEventListener('click', async e=>{
   const al=e.target.closest('[data-al]'); if(al){ const a=S._al[+al.dataset.al]; if(a&&a.go) go(a.go.view,a.go.id,a.go.tab); return; }
   const vt=e.target.closest('[data-vtab]'); if(vt){ S.ui.vtab=vt.dataset.vtab; render(); return; }
   const ct=e.target.closest('[data-ctab]'); if(ct){ S.ui.ctab=ct.dataset.ctab; render(); return; }
+  const pt=e.target.closest('[data-ptab]'); if(pt){ S.ui.ptab=pt.dataset.ptab; render(); return; }
   const el=e.target.closest('[data-act],[data-go]'); if(!el) return;
   if(el.dataset.go && !el.dataset.act){ go(el.dataset.go, el.dataset.id, el.dataset.tab); return; }
   const a=el.dataset.act, id=el.dataset.id;
@@ -1312,6 +1745,7 @@ document.addEventListener('click', async e=>{
     else if(a==='pagarConta'){ const c=G('contas',id); const dt=await perguntar('Pagar conta',`${esc(c.descricao)} · ${money(c.valor)} · ${esc(centroLbl(c.centro))}. Data do pagamento:`,'Marcar como paga','date'); if(dt!==null){ await SCHEMA.contas.save({...c,status:'paga',pagoEm:dt},id,c); toast('Conta paga. Para anexar o comprovante, abra a conta.'); } }
     else if(a==='csvContas'){ const cl=el.dataset.classe; const m=S.ui.mesC||mesAtual(); const cs=L('contas').filter(c=>(c.classe==='fixa')===(cl==='fixa')&&mesDe(c)===m&&passaCentro(c));
       csv(`contas-${cl}-${m}.csv`,cs,[['Vencimento',c=>dbr(c.vencimento)],['Centro de custo',c=>centroLbl(c.centro)],['Descrição',c=>c.descricao],['Categoria',c=>c.categoria||''],['Fornecedor',c=>c.fornecedor||''],['Tipo',c=>lbl(CLASSE,c.classe)],['Valor (R$)',c=>nf(c.valor,2)],['Situação',c=>c.status],['Pago em',c=>dbr(c.pagoEm)]]); }
+    else if(a==='csvRentab') csv(`rentabilidade-${hoje()}.csv`,linhasRentab(),[['Placa',r=>PL(r.v.id)],['Modelo',r=>r.v.modelo||''],['Situação',r=>VSTATUS[r.status]||r.status],['Receita acumulada',r=>nf(r.acc.rec,2)],['Custos acumulados',r=>nf(r.acc.custo,2)],['Resultado acumulado',r=>nf(r.acc.res,2)],['Preço de compra',r=>nf(r.compra,2)],['Retorno sobre a compra (%)',r=>r.roi!=null?nf(r.roi,1):''],['Km rodado',r=>r.kmRod],['Custo por km',r=>r.custoKm!=null?nf(r.custoKm,2):''],['Aluguel ÷ compra (%/mês)',r=>r.yieldMes!=null?nf(r.yieldMes,2):''],['Resultado médio 3 meses',r=>r.med!=null?nf(r.med,2):''],['Meses para se pagar',r=>r.payback!=null?nf(r.payback,0):'']]);
     else if(a==='centroAdm'){ S.ui.centro=CENTRO_ADM; go('variaveis'); }
     else if(a==='sairVerComo') sairVerComo();
     else if(a==='pvtab'){ S.p.vtab=el.dataset.tab||'resumo'; render(); }
@@ -1360,7 +1794,7 @@ document.addEventListener('click', async e=>{
 });
 document.addEventListener('input',e=>{ if(e.target.id==='vbusca') filtrarVeiculos(e.target.value); });
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'){ const al=e.target.closest&&e.target.closest('[data-al]'); if(al) al.click(); } });
-document.addEventListener('change',e=>{ if(e.target.id==='fin_m'){ S.ui.mes=e.target.value||mesAtual(); render(); } if(e.target.id==='ab_m'){ S.ui.mesAb=e.target.value||mesAtual(); render(); } if(e.target.id==='fc_m'){ S.ui.mesC=e.target.value||mesAtual(); render(); } if(e.target.id==='fc_c'){ S.ui.centro=e.target.value; render(); } const k=e.target.dataset&&e.target.dataset.pf; if(k && S.p){ S.p.f=S.p.f||{}; S.p.f[k]=e.target.value; render(); } });
+document.addEventListener('change',e=>{ if(e.target.id==='fx_s'){ try{ localStorage.setItem('f2_saldo_caixa',e.target.value); }catch(x){} render(); return; } if(e.target.id==='fin_m'){ S.ui.mes=e.target.value||mesAtual(); render(); } if(e.target.id==='ab_m'){ S.ui.mesAb=e.target.value||mesAtual(); render(); } if(e.target.id==='fc_m'){ S.ui.mesC=e.target.value||mesAtual(); render(); } if(e.target.id==='fc_c'){ S.ui.centro=e.target.value; render(); } const k=e.target.dataset&&e.target.dataset.pf; if(k && S.p){ S.p.f=S.p.f||{}; S.p.f[k]=e.target.value; render(); } });
 async function salvarCfg(p){ const n={...(G('config','geral')||{}),...p,atualizadoEm:new Date().toISOString(),atualizadoPor:S.uid}; await S.db.doc('config/geral').set(limpa(n)); audit('alterou parâmetros','config','geral',Object.keys(p).join(', ')); toast('Configurações salvas.'); }
 async function salvarPlanos(lista){ await S.db.doc('config/planos').set(limpa({lista,atualizadoEm:new Date().toISOString(),atualizadoPor:S.uid})); const g=G('config','geral'); if(g&&(g.planos||[]).length) await S.db.doc('config/geral').set(limpa({...g,id:undefined,planos:[]})); audit('alterou modelos de plano','config','planos',lista.length+' modelo(s)'); toast('Modelos de plano salvos.'); }
 function bindConfig(){ const imp=$('#cf_imp'); if(imp) imp.onchange=e=>{ const fl=e.target.files[0]; e.target.value=''; if(fl) importar(fl); }; const f=$('#cfgf'); if(!f) return; f.onsubmit=async e=>{ e.preventDefault(); const g=id=>f.querySelector(id).value;
