@@ -189,6 +189,10 @@ a{color:var(--accent)}
 .chklist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 14px}
 .chklist label{display:flex;gap:8px;align-items:center;font-weight:500;color:var(--fg);font-size:14px}
 details summary{cursor:pointer}
+@media (max-width:560px){ .alert{grid-template-columns:6px minmax(0,1fr)} .alert>.btn{grid-column:2;justify-self:start} .alert>span:last-child:empty{display:none} }
+.qrcard{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;border:1px dashed var(--line);border-radius:10px;padding:18px}
+.qrsvg{width:min(260px,70vw);background:#fff;padding:6px;border-radius:6px}.qrsvg svg{display:block;width:100%;height:auto}
+@media print{ body *{visibility:hidden!important} #qrprint,#qrprint *{visibility:visible!important} #qrprint{position:fixed;left:0;top:0;width:100%;border:0;color:#000} dialog::backdrop{background:none} }
 @media (max-width:860px){ .side-foot{flex-direction:row;align-items:center;justify-content:space-between;margin-top:8px;padding-top:8px} .chklist{grid-template-columns:minmax(0,1fr)} }
 </style>
 </head>
@@ -213,7 +217,7 @@ details summary{cursor:pointer}
 "use strict";
 /* ===================== estado e utilidades ===================== */
 const S = { db:null, user:null, assets:null, downloads:null, uid:null, data:{}, config:null, loaded:new Set(), route:{view:'painel'}, ui:{mes:null, vtab:'resumo'}, names:{}, ro:false };
-const COLS = ['clientes','condutores','veiculos','contratos','usos','leituras','manutencoes','chamados','reembolsos','multas','documentos','pacotes','faturas','lancamentos','vistorias'];
+const COLS = ['clientes','condutores','veiculos','contratos','usos','leituras','manutencoes','chamados','reembolsos','multas','documentos','pacotes','faturas','lancamentos','vistorias','abastecimentos'];
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const z = n => String(n).padStart(2,'0');
@@ -276,15 +280,20 @@ function clienteDe(col,d,id){
   if(d.veiculoId){ const ref=String(d.data||d.dataHora||d.inicio||d.competencia||hoje()).slice(0,10); const c=contratoDoVeiculo(d.veiculoId,ref)||contratoDoVeiculo(d.veiculoId); return c?c.clienteId:null; }
   return null;
 }
+async function comprimir(file){
+  if(!file || !/^image\/(jpeg|png|webp)$/.test(file.type||'') || file.size<450*1024) return file;
+  try{ const bmp=await createImageBitmap(file); const M=1600; const k=Math.min(1,M/Math.max(bmp.width,bmp.height)); const cv=document.createElement('canvas'); cv.width=Math.round(bmp.width*k); cv.height=Math.round(bmp.height*k);
+    cv.getContext('2d').drawImage(bmp,0,0,cv.width,cv.height); const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.82)); if(!blob||blob.size>=file.size) return file;
+    return new File([blob],(file.name||'foto').replace(/\.[a-z0-9]{1,5}$/i,'')+'.jpg',{type:'image/jpeg'}); }catch(e){ return file; } }
 const Anexos = {
-  async salvar(file,cid){ const ext=((file.name||'').match(/\.[a-z0-9]{1,5}$/i)||[''])[0].toLowerCase(); const path=(cid?'cliente_'+cid:'f2')+'/'+novoId()+ext;
+  async salvar(file,cid){ file=await comprimir(file); if(file.size>50*1024*1024) throw 'Arquivo maior que 50 MB. Envie um arquivo menor.'; const ext=((file.name||'').match(/\.[a-z0-9]{1,5}$/i)||[''])[0].toLowerCase(); const path=(cid?'cliente_'+cid:'f2')+'/'+novoId()+ext;
     const {error}=await Supa.sb.storage.from('anexos').upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false}); if(error) throw erroSupa(error); return {id:path}; },
   async abrir(path){ const w=window.open('','_blank'); const {data,error}=await Supa.sb.storage.from('anexos').createSignedUrl(path,300);
     if(error||!data){ if(w) w.close(); toast('Não foi possível abrir o arquivo.'); return; } if(w) w.location=data.signedUrl; else location.href=data.signedUrl; }
 };
 
 
-const DEFAULT_CFG = { alertasKm:[70,85,100], horasCheckin:14, diasProjecao:30, diasAvisoVenc:30, diasAvisoMulta:5, limiteEmergencia:500, carenciaPadrao:0, matriz:{}, planos:[] };
+const DEFAULT_CFG = { alertasKm:[70,85,100], horasCheckin:14, diasProjecao:30, diasAvisoVenc:30, diasAvisoMulta:5, limiteEmergencia:500, carenciaPadrao:0, matriz:{}, planos:[], prev:{pvRevKm:10000,pvRevMeses:12,pvOleoKm:10000,pvOleoMeses:12,pvAlinKm:10000,pvAlinMeses:0}, prevAvisoKm:1000, prevAvisoDias:30 };
 const cfg = () => { const c={...DEFAULT_CFG, ...(G('config','geral')||{})}; delete c.id; return c; };
 
 const CATS = [
@@ -299,7 +308,7 @@ const arcaLbl = k => (ARCA.find(c=>c[0]===k)||[,k||'—'])[1];
 const VSTATUS = {preparacao:'Em preparação', disponivel:'Disponível', alugado:'Alugado', manutencao:'Em manutenção', sinistrado:'Sinistrado', a_venda:'À venda', vendido:'Vendido'};
 const VSTATUS_P = {preparacao:'p-info', disponivel:'p-ok', alugado:'p-info', manutencao:'p-warn', sinistrado:'p-bad', a_venda:'p-warn', vendido:''};
 const CH_ST = [['aberto','Aberto'],['em_analise','Em análise'],['aguardando_cliente','Aguardando cliente'],['aguardando_oficina','Aguardando oficina'],['autorizado','Autorizado'],['em_execucao','Em execução'],['resolvido','Resolvido'],['encerrado','Encerrado']];
-const CH_TIPO = [['manutencao','Manutenção'],['problema','Problema informado'],['emergencia','Emergência'],['sinistro','Sinistro'],['reembolso','Reembolso'],['duvida','Dúvida']];
+const CH_TIPO = [['manutencao','Manutenção'],['problema','Problema informado'],['emergencia','Emergência'],['sinistro','Sinistro'],['reembolso','Reembolso'],['documento','Documento enviado'],['duvida','Dúvida']];
 const RB_ST = [['solicitado','Solicitado'],['aguardando','Aguardando aprovação'],['aprovado','Aprovado'],['recusado','Recusado'],['pago','Pago']];
 const DOC_T = [['crlv','CRLV'],['ipva','IPVA'],['licenciamento','Licenciamento'],['seguro','Seguro (apólice)'],['rastreador','Rastreador'],['outro','Outro']];
 const LC_T = [['receita','Receita'],['custo','Custo'],['repasse','Repasse (não é receita)'],['caucao','Caução'],['investimento','Investimento'],['venda','Venda do veículo']];
@@ -323,6 +332,7 @@ function refLabel(col,d){
   if(col==='pacotes') return `Pacote ${nf(d.km)} km · ${money(d.preco)} · ${d.status||''}`;
   if(col==='vistorias') return `Vistoria ${VIST_T[d.tipo]||''} · ${pl} · ${dtbr(d.data)}`;
   if(col==='leituras') return `${pl} · ${kmf(d.km)} · ${d.origem||''}`;
+  if(col==='abastecimentos') return `${pl} · ${nf(d.litros,2)} l · ${money(d.valor)}`;
   if(col==='usos') return `${pl} · ${d.condutorNome||''} · ${d.status||''}`;
   if(col==='multas') return `Multa ${d.auto||''} · ${pl} · ${money(d.valor)}`;
   if(col==='reembolsos') return `Reembolso ${money(d.valor)} · ${d.motivo||''}`;
@@ -415,14 +425,9 @@ function alertas(){
   for(const m of L('manutencoes').filter(m=>m.arcaCom==='apuracao' && m.status!=='cancelada')) add('w',`Mau uso em apuração`,`${catLbl(m.categoria)} · ${(G('veiculos',m.veiculoId)||{}).placa||''} · decidir responsabilidade`,{view:'manut'});
   // preventiva do cliente vencida
   for(const v of L('veiculos').filter(v=>statusVeiculo(v)!=='vendido')){
-    const km=kmAtual(v);
-    for(const cat of PREVENTIVAS){
-      const ms=L('manutencoes').filter(m=>m.veiculoId===v.id && m.categoria===cat && m.status!=='cancelada').sort((a,b)=>a.data<b.data?1:-1);
-      const m=ms[0]; if(!m) continue;
-      const vd = m.proximaData && m.proximaData<h; const vk = m.proximaKm && km>=+m.proximaKm;
-      if(vd||vk) add('w',`${catLbl(cat)} vencida em ${(v.placa||'').toUpperCase()}`,`${vk?'Km previsto '+kmf(m.proximaKm)+' · atual '+kmf(km):'Data prevista '+dbr(m.proximaData)} · sem comprovante novo`,{view:'veiculo',id:v.id,tab:'manut'});
-    }
+    for(const p of preventivas(v).filter(p=>p.st==='vencida')) add('w',`${p.nome} vencida em ${(v.placa||'').toUpperCase()}`,`${p.pk!=null?'Previsto '+kmf(p.pk)+' · atual '+kmf(kmAtual(v)):''}${p.pd?' · prazo '+dbr(p.pd):''} · sem comprovante novo`,{view:'veiculo',id:v.id,tab:'manut'});
   }
+  for(const x of L('vistorias').filter(x=>x.status==='enviada')){ const n=Object.keys(x.checklist||{}).length; add(n||x.avarias?'w':'i',`Vistoria do condutor ${n||x.avarias?'com avarias':'para revisar'}`,`${((G('veiculos',x.veiculoId)||{}).placa||'').toUpperCase()} · ${x.condutorNome||''} · ${dtbr(x.data)}`,{view:'vistorias'}); }
   for(const x of L('vistorias').filter(x=>x.status==='contestada')) add('w','Vistoria contestada pelo cliente',`${((G('veiculos',x.veiculoId)||{}).placa||'').toUpperCase()} · ${x.contestacao||''}`,{view:'vistorias'});
   for(const k of L('pacotes').filter(k=>k.status==='solicitado')) add('i','Pedido de pacote de km',`${nf(k.km)} km por ${money(k.preco)} · aprove em Contratos`,{view:'contratos'});
   if(S.me && S.me.perfil==='admin'){ const n=(S.perfis||[]).filter(p=>p.perfil==='pendente'||!p.ativo).length; if(n) add('i',`${n} usuário(s) aguardando liberação`,'Defina perfil e ative em Configurações → Usuários',{view:'config'}); }
@@ -477,6 +482,8 @@ const SCHEMA = {
     {k:'csCarta',l:'Valor da carta (R$)',t:'money',show:v=>v.aqForma==='consorcio'},{k:'csParcela',l:'Parcela atual (R$)',t:'money',show:v=>v.aqForma==='consorcio'},
     {k:'csParcelas',l:'Nº de parcelas',t:'num',show:v=>v.aqForma==='consorcio'},{k:'csPagas',l:'Parcelas pagas',t:'num',show:v=>v.aqForma==='consorcio'},
     {k:'csSaldo',l:'Saldo devedor (R$)',t:'money',show:v=>v.aqForma==='consorcio'},{k:'csAlienado',l:'Alienado à administradora',t:'bool',show:v=>v.aqForma==='consorcio'},
+    {sec:'Manutenção preventiva (vazio = padrão das Configurações)'},{k:'pvRevKm',l:'Revisão a cada (km)',t:'num'},{k:'pvRevMeses',l:'Revisão a cada (meses)',t:'num'},
+    {k:'pvOleoKm',l:'Troca de óleo a cada (km)',t:'num'},{k:'pvOleoMeses',l:'Troca de óleo a cada (meses)',t:'num'},{k:'pvAlinKm',l:'Alinhamento a cada (km)',t:'num'},{k:'pvAlinMeses',l:'Alinhamento a cada (meses)',t:'num'},
     {k:'obs',l:'Observações',t:'area',full:1}],
     async save(v,id,antes){
       v.placa=(v.placa||'').toUpperCase().replace(/\s/g,'');
@@ -505,6 +512,7 @@ const SCHEMA = {
       if(sobre && v.status!=='encerrado') throw 'Este veículo já tem contrato ativo no mesmo período. Encerre o anterior primeiro.';
       const nid=await salvar('contratos',id,v);
       await salvar('veiculos',v.veiculoId,{},'vinculou cliente');
+      for(const d of L('documentos').filter(d=>d.veiculoId===v.veiculoId)) if((Store.docs['documentos/'+d.id]||{}).cid!==clienteDe('documentos',d,d.id)) await salvar('documentos',d.id,{},'vinculou cliente');
       if(!antes) await salvar('leituras',null,{veiculoId:v.veiculoId,km:+v.kmInicial,data:v.inicio+'T08:00',origem:'contrato',status:'verificada'},'registrou km');
       return nid; }},
   leituras:{col:'leituras', titulo:'Leitura de km', fields:[
@@ -570,7 +578,7 @@ const SCHEMA = {
   documentos:{col:'documentos', titulo:'Documento', fields:[
     {k:'veiculoId',l:'Veículo',t:'ref',ref:'veiculos',req:1},{k:'tipo',l:'Tipo',t:'sel',opts:opt(DOC_T),req:1},{k:'descricao',l:'Descrição',hint:'Ex.: IPVA 2027, apólice nº 123'},
     {k:'vencimento',l:'Vencimento',t:'date'},{k:'valor',l:'Valor pago (R$)',t:'money'},{k:'dataPagamento',l:'Data do pagamento',t:'date'},
-    {k:'seguradora',l:'Seguradora',show:v=>v.tipo==='seguro'},{k:'apolice',l:'Nº da apólice',show:v=>v.tipo==='seguro'},{k:'franquia',l:'Franquia (R$)',t:'money',show:v=>v.tipo==='seguro'},
+    {k:'seguradora',l:'Seguradora',show:v=>v.tipo==='seguro'},{k:'apolice',l:'Nº da apólice',show:v=>v.tipo==='seguro'},{k:'franquia',l:'Franquia (R$)',t:'money',show:v=>v.tipo==='seguro'},{k:'assistencia',l:'Telefone da assistência 24 h',show:v=>v.tipo==='seguro'},
     {k:'coberturas',l:'Coberturas',t:'area',full:1,show:v=>v.tipo==='seguro'},{k:'arquivo',l:'Arquivo',t:'file',accept:'image/*,application/pdf',full:1}],
     async save(v,id){ const nid=await salvar('documentos',id,v);
       await syncLanc('documentos',nid, (+v.valor>0 && v.dataPagamento)?[{veiculoId:v.veiculoId,tipo:'custo',categoria:lbl(DOC_T,v.tipo),descricao:v.descricao||lbl(DOC_T,v.tipo),valor:+v.valor,competencia:v.dataPagamento,dataCaixa:v.dataPagamento}]:[]);
@@ -596,24 +604,24 @@ const SCHEMA = {
 
 /* ===================== vistorias, usuários e formulários do portal ===================== */
 const VIST_ITENS=['Lataria e pintura','Para-brisa e vidros','Pneus e estepe','Faróis e lanternas','Retrovisores','Interior e bancos','Painel sem luzes de alerta','Documentos no veículo','Macaco, chave de roda e triângulo','Limpeza'];
-const VIST_T={entrega:'Entrega',devolucao:'Devolução',periodica:'Periódica'};
-const VIST_ST={aguardando_aceite:'Aguardando aceite do cliente',aceita:'Aceita pelo cliente',contestada:'Contestada pelo cliente',sem_aceite:'Interna (sem aceite)'};
+const VIST_T={entrega:'Entrega',devolucao:'Devolução',periodica:'Periódica',condutor:'Vistoria do condutor'};
+const VIST_ST={aguardando_aceite:'Aguardando aceite do cliente',aceita:'Aceita pelo cliente',contestada:'Contestada pelo cliente',sem_aceite:'Interna (sem aceite)',enviada:'Enviada pelo condutor',revisada:'Revisada pela F2'};
 const PERFIS=[['admin','Administrador F2'],['operacional','Operacional F2'],['financeiro','Financeiro F2'],['gestor','Gestor do cliente'],['condutor','Condutor'],['pendente','Pendente']];
 const EMERG={pane:'Pane',bateria:'Bateria',pneu:'Pneu furado',acidente:'Acidente',guincho:'Guincho',chave:'Chave perdida',roubo:'Roubo',furto:'Furto',mecanico:'Problema mecânico'};
 SCHEMA.vistorias={col:'vistorias',titulo:'Vistoria',fields:[
-  {k:'veiculoId',l:'Veículo',t:'ref',ref:'veiculos',req:1,filter:v=>statusVeiculo(v)!=='vendido'},{k:'tipo',l:'Tipo',t:'sel',opts:opt(Object.entries(VIST_T)),req:1,def:'entrega'},
+  {k:'veiculoId',l:'Veículo',t:'ref',ref:'veiculos',req:1,filter:v=>statusVeiculo(v)!=='vendido'},{k:'tipo',l:'Tipo',t:'sel',opts:opt(Object.entries(VIST_T).filter(([k])=>k!=='condutor')),req:1,def:'entrega'},
   {k:'data',l:'Data e hora',t:'dt',req:1,defFn:agora},{k:'km',l:'Km do odômetro',t:'num',req:1},
   {k:'combustivel',l:'Nível de combustível',t:'sel',opts:opt([['reserva','Reserva'],['1/4','1/4'],['1/2','1/2'],['3/4','3/4'],['cheio','Cheio']])},
   {k:'status',l:'Aceite',t:'sel',opts:opt(Object.entries(VIST_ST)),def:'aguardando_aceite'},
   {k:'checklist',l:'Checklist: marque os itens COM avaria ou pendência',t:'checklist',opts:VIST_ITENS,full:1},
   {k:'avarias',l:'Descrição das avarias',t:'area',full:1},{k:'fotos',l:'Fotos (frente, traseira, laterais, painel e avarias)',t:'files',accept:'image/*',full:1}],
-  async save(v,id,antes){ const c=contratoDoVeiculo(v.veiculoId,(v.data||'').slice(0,10)); v.contratoId=c?c.id:null; v.clienteId=c?c.clienteId:null;
+  async save(v,id,antes){ if(antes&&antes.tipo==='condutor') v.tipo='condutor'; const c=contratoDoVeiculo(v.veiculoId,(v.data||'').slice(0,10)); v.contratoId=c?c.id:null; v.clienteId=c?c.clienteId:null;
     const nid=await salvar('vistorias',id,v);
     if(!antes) await salvar('leituras',null,{veiculoId:v.veiculoId,km:+v.km,data:v.data,origem:'vistoria',status:'verificada',origemId:nid},'registrou km');
     return nid; }};
 SCHEMA.chamados.fields.push({k:'respostaF2',l:'Resposta ao cliente (aparece no portal)',t:'area',full:1});
 SCHEMA.p_km={col:'leituras',titulo:'Informar quilometragem',fixo:1,fields:[{k:'veiculoId',t:'hidden'},{k:'km',l:'Km do odômetro',t:'num',req:1},{k:'foto',l:'Foto do odômetro',t:'file',accept:'image/*',req:1,full:1}],
-  async save(v){ const vv=G('veiculos',v.veiculoId); return salvar('leituras',null,{...v,data:agora(),origem:'informada',status:'informada',suspeita:+v.km<kmAtual(vv)},'informou km'); }};
+  async save(v){ const vv=G('veiculos',v.veiculoId); return salvar('leituras',null,{...v,data:agora(),origem:'informada',status:'informada',horaServidor:true,suspeita:+v.km<kmAtual(vv)},'informou km'); }};
 SCHEMA.p_manut={col:'chamados',titulo:'Solicitar manutenção',fixo:1,fields:[{k:'veiculoId',t:'hidden'},{k:'categoria',l:'Tipo de serviço',t:'sel',opts:CATS.filter(c=>c[0]!=='mau_uso').map(c=>({v:c[0],l:c[1]})),req:1},
   {k:'descricao',l:'O que precisa ser feito',t:'area',req:1,full:1},{k:'local',l:'Onde o veículo está'},{k:'oficinaSugerida',l:'Oficina sugerida (opcional)'},
   {k:'anexos',l:'Fotos, vídeos ou orçamento',t:'files',accept:'image/*,video/*,application/pdf',full:1}],
@@ -648,7 +656,7 @@ function fieldHTML(f, val){
   let inp='';
   const v = val==null ? '' : val;
   switch(f.t){
-    case 'num': case 'money': inp=`<input id="${id}" name="${f.k}" type="number" step="${f.t==='money'?'0.01':'1'}" inputmode="decimal" value="${esc(v)}"${f.req?' required':''}>`; break;
+    case 'num': case 'money': inp=`<input id="${id}" name="${f.k}" type="number" step="${f.step||(f.t==='money'?'0.01':'1')}" inputmode="decimal" value="${esc(v)}"${f.req?' required':''}>`; break;
     case 'date': inp=`<input id="${id}" name="${f.k}" type="date" value="${esc(String(v).slice(0,10))}"${f.req?' required':''}>`; break;
     case 'dt': inp=`<input id="${id}" name="${f.k}" type="datetime-local" value="${esc(String(v).slice(0,16))}"${f.req?' required':''}>`; break;
     case 'month': inp=`<input id="${id}" name="${f.k}" type="month" value="${esc(v)}"${f.req?' required':''}>`; break;
@@ -695,6 +703,7 @@ function openForm(key, id, preset){
   const del=form.querySelector('[data-del]'); if(del) del.onclick=async()=>{ const motivo=await perguntar('Excluir este registro?','Ele sai das listas, mas fica guardado no histórico e na auditoria. Informe o motivo:','Excluir',true); if(motivo===null) return; try{ await excluirLogico(sc.col,id,motivo); if(sc.col==='manutencoes'||sc.col==='documentos'||sc.col==='reembolsos') await syncLanc(sc.col,id,[]); dlg.close(); toast('Registro excluído.'); }catch(e){ toast(errMsg(e)); } };
   form.addEventListener('submit', async e=>{
     e.preventDefault(); const err=$('#ferr'); err.hidden=true;
+    if(S.preview){ err.textContent='Modo visualização: nada é gravado.'; err.hidden=false; return; }
     const v=lerForm(form,sc);
     const falta=sc.fields.filter(f=>f.req && !f.sec && !(f.show && !f.show(v)) && (f.t==='file' ? !(cur&&cur[f.k]) && !(form.querySelector('#f_'+f.k)||{}).files?.length : f.t!=='files' && f.t!=='checklist' && (v[f.k]===''||v[f.k]==null)));
     if(falta.length){ err.textContent='Preencha: '+falta.map(f=>f.l).join(', ')+'.'; err.hidden=false; err.style.color='var(--danger)'; return; }
@@ -722,67 +731,6 @@ function perguntar(titulo, texto, ok, comCampo){
 }
 
 /* ===================== check-in / checkout / retroativo ===================== */
-function openCheckin(vid){
-  const v=G('veiculos',vid); const c=contratoDoVeiculo(vid); let conds=c?L('condutores').filter(d=>d.clienteId===c.clienteId && d.status!=='bloqueado'):[];
-  const fixo = S.me && S.me.perfil==='condutor';
-  if(fixo){ const mc=meuCondutor(); if(!mc || mc.status!=='aprovado') return toast('Seu cadastro de condutor precisa estar aprovado pelo gestor para fazer check-in.'); conds=[mc]; }
-  const ab=usoAberto(vid);
-  const dlg=$('#dlg');
-  dlg.innerHTML=`<form id="frm"><div class="dh"><h2>Check-in · ${esc((v.placa||'').toUpperCase())}</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc">
-    ${ab?`<div class="note" style="margin-bottom:12px">Este veículo está com <b>${esc(nomeCondutor(ab))}</b> desde ${dtbr(ab.inicio)}. Ao confirmar, esse uso será encerrado como <b>encerrado forçado</b>.</div>`:''}
-    <div class="fgrid">
-      <div class="fld full"><label for="ci_c">Condutor <span class="req">*</span></label><select id="ci_c">${fixo?'':'<option value="">Selecione…</option>'}${conds.map(d=>`<option value="${esc(d.id)}"${fixo?' selected':''}>${esc(d.nome)}${d.status==='pendente'?' (pendente)':''}</option>`).join('')}${fixo?'':'<option value="__outro">Outro (digitar nome)</option>'}</select>${c?'':'<span class="hint">Veículo sem contrato ativo.</span>'}</div>
-      <div class="fld full" id="ci_on" hidden><label for="ci_n">Nome do condutor</label><input id="ci_n"></div>
-      <div class="fld"><label for="ci_km">Km atual <span class="req">*</span></label><input id="ci_km" type="number" inputmode="numeric" value="${kmAtual(v)}"><span class="hint">Último km registrado: ${kmf(kmAtual(v))}</span></div>
-      <div class="fld"><label>Data e hora</label><input value="${dtbr(agora())}" disabled><span class="hint">Automático, não editável.</span></div>
-      <div class="fld full"><label for="ci_o">Observação</label><textarea id="ci_o" placeholder="Ex.: risco na porta traseira, luz de óleo acesa"></textarea></div>
-      <div class="fld chk full"><input id="ci_ch" type="checkbox"><label for="ci_ch">Abrir chamado com esta observação</label></div>
-    </div><p class="hint" id="ferr" hidden style="color:var(--danger)"></p></div>
-    <div class="df"><button type="button" class="btn" data-close>Cancelar</button><button type="submit" class="btn pri" id="fsub">Confirmar check-in</button></div></form>`;
-  const f=$('#frm'); f.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dlg.close());
-  f.querySelector('#ci_c').onchange=e=>{ f.querySelector('#ci_on').hidden = e.target.value!=='__outro'; };
-  f.onsubmit=async e=>{ e.preventDefault(); const err=$('#ferr'); err.hidden=true;
-    const sel=f.querySelector('#ci_c').value, nome=f.querySelector('#ci_n').value.trim(), km=+f.querySelector('#ci_km').value, obs=f.querySelector('#ci_o').value.trim(), ch=f.querySelector('#ci_ch').checked;
-    if(!sel || (sel==='__outro'&&!nome) || !km){ err.textContent='Informe o condutor e o km.'; err.hidden=false; return; }
-    if(statusVeiculo(v)==='manutencao'||statusVeiculo(v)==='vendido'){ err.textContent='Veículo em manutenção ou vendido não aceita check-in.'; err.hidden=false; return; }
-    const sub=$('#fsub'); sub.disabled=true;
-    try{
-      const lock=await S.db.doc('locks/'+vid).acquire({holder:S.uid||'f2',ttlMs:15000});
-      if(!lock.acquired) throw 'Outro registro está em andamento neste veículo. Tente de novo em alguns segundos.';
-      const abertos=L('usos').filter(u=>u.veiculoId===vid && u.status==='em_uso');
-      const t=agora();
-      for(const d of abertos) await salvar('usos',d.id,{status:'encerrado_forcado',fim:t,encerradoPor:S.uid},'encerrou uso (forçado)');
-      const ultFim=L('usos').filter(u=>u.veiculoId===vid && u.kmFinal!=null).sort((a,b)=>a.fim<b.fim?1:-1)[0];
-      const refKm = ultFim? +ultFim.kmFinal : null; const gap = refKm!=null && km>refKm ? km-refKm : 0;
-      const atual=kmAtual(v); const suspeita = km<atual;
-      const uid=await salvar('usos',null,{veiculoId:vid,contratoId:c?c.id:null,clienteId:c?c.clienteId:null,condutorId:sel==='__outro'?null:sel,condutorNome:sel==='__outro'?nome:(G('condutores',sel)||{}).nome,inicio:t,kmInicial:km,obsInicio:obs,status:'em_uso',kmSemCondutor:gap,gapResolvido:false,retroativo:false},'fez check-in');
-      await salvar('leituras',null,{veiculoId:vid,km,data:t,origem:'check-in',status:'informada',suspeita,origemId:uid},'registrou km');
-      if(ch && obs) await SCHEMA.chamados.save({tipo:'problema',veiculoId:vid,prioridade:'media',status:'aberto',descricao:obs,origemUso:uid},null,null);
-      dlg.close(); toast(gap>0?`Check-in feito. ${kmf(gap)} rodados sem condutor registrado.`:suspeita?'Check-in feito. Km menor que o atual: leitura marcada como suspeita.':'Check-in feito.');
-    }catch(ex){ err.textContent=errMsg(ex); err.hidden=false; sub.disabled=false; }
-  };
-  dlg.showModal();
-}
-function openCheckout(vid){
-  const u=usoAberto(vid); const v=G('veiculos',vid); if(!u) return toast('Não há check-in aberto neste veículo.');
-  const dlg=$('#dlg');
-  dlg.innerHTML=`<form id="frm"><div class="dh"><h2>Checkout · ${esc((v.placa||'').toUpperCase())}</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc"><div class="fgrid">
-    <div class="fld full"><label>Condutor</label><input value="${esc(nomeCondutor(u))} · desde ${dtbr(u.inicio)} · ${kmf(u.kmInicial)}" disabled></div>
-    <div class="fld"><label for="co_km">Km final <span class="req">*</span></label><input id="co_km" type="number" inputmode="numeric" value="${u.kmInicial}"></div>
-    <div class="fld"><label>Data e hora</label><input value="${dtbr(agora())}" disabled></div>
-    <div class="fld full"><label for="co_o">Observação</label><textarea id="co_o"></textarea></div>
-    <div class="fld chk full"><input id="co_ch" type="checkbox"><label for="co_ch">Abrir chamado com esta observação</label></div></div><p class="hint" id="ferr" hidden style="color:var(--danger)"></p></div>
-    <div class="df"><button type="button" class="btn" data-close>Cancelar</button><button type="submit" class="btn pri" id="fsub">Confirmar checkout</button></div></form>`;
-  const f=$('#frm'); f.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dlg.close());
-  f.onsubmit=async e=>{ e.preventDefault(); const err=$('#ferr'); const km=+f.querySelector('#co_km').value; const obs=f.querySelector('#co_o').value.trim();
-    if(!km || km<+u.kmInicial){ err.textContent='O km final não pode ser menor que o inicial ('+kmf(u.kmInicial)+').'; err.hidden=false; return; }
-    $('#fsub').disabled=true;
-    try{ const t=agora(); await salvar('usos',u.id,{status:'encerrado',fim:t,kmFinal:km,obsFim:obs},'fez checkout');
-      await salvar('leituras',null,{veiculoId:vid,km,data:t,origem:'checkout',status:'informada',origemId:u.id+'_fim'},'registrou km');
-      if(f.querySelector('#co_ch').checked && obs) await SCHEMA.chamados.save({tipo:'problema',veiculoId:vid,prioridade:'media',status:'aberto',descricao:obs,origemUso:u.id},null,null);
-      dlg.close(); toast('Checkout feito.'); }catch(ex){ err.textContent=errMsg(ex); err.hidden=false; $('#fsub').disabled=false; } };
-  dlg.showModal();
-}
 function openRetro(vid){
   const dlg=$('#dlg'); const vs=L('veiculos').filter(v=>statusVeiculo(v)!=='vendido' && (!ehCliente()||idsVeic().has(v.id)));
   dlg.innerHTML=`<form id="frm"><div class="dh"><h2>Registrar uso retroativo</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc">
@@ -905,11 +853,11 @@ const vCell = id => { const v=G('veiculos',id); return v? placaHTML(v) : '—'; 
 
 /* ===================== views ===================== */
 const NAV = [
-  ['grp','Operação'],['painel','Painel'],['clientes','Clientes'],['veiculos','Veículos'],['contratos','Contratos'],['uso','Uso e check-in'],['vistorias','Vistorias'],
+  ['grp','Operação'],['painel','Painel'],['clientes','Clientes'],['veiculos','Veículos'],['contratos','Contratos'],['uso','Uso e check-in'],['abast','Abastecimentos'],['vistorias','Vistorias'],
   ['grp','Atendimento'],['manut','Manutenção e chamados'],['reemb','Reembolsos'],['multas','Multas'],['docs','Documentos e seguros'],
   ['grp','Financeiro'],['faturas','Faturas'],['financeiro','Resultado e lançamentos'],
   ['grp','Sistema'],['config','Configurações'],['auditoria','Auditoria']];
-const PERM={admin:'*',operacional:['painel','clientes','cliente','veiculos','veiculo','contratos','uso','vistorias','manut','reemb','multas','docs'],financeiro:['painel','clientes','cliente','veiculos','veiculo','contratos','faturas','financeiro','reemb']};
+const PERM={admin:'*',operacional:['painel','clientes','cliente','veiculos','veiculo','contratos','uso','abast','vistorias','manut','reemb','multas','docs'],financeiro:['painel','clientes','cliente','veiculos','veiculo','contratos','faturas','financeiro','reemb']};
 const pode = v => !!S.me && (PERM[S.me.perfil]==='*' || (PERM[S.me.perfil]||[]).includes(v));
 function renderNav(al){
   const cur = S.route.view==='veiculo'?'veiculos':S.route.view==='cliente'?'clientes':S.route.view;
@@ -928,7 +876,7 @@ function vPainel(al){
   const capital=ativos.reduce((s,v)=>s+(+v.aqPreco||0)+(+v.aqCustos||0),0);
   if(!vs.length) return head('Painel',`Hoje, ${dbr(hoje())}`)+`<div class="card stack"><h2>Comece cadastrando a frota</h2><p class="muted" style="margin:0">O painel mostra frota, alertas, uso e resultado assim que houver veículos, clientes e contratos. Siga a ordem: cliente, veículo, contrato.</p><div class="row">${B('Cadastrar cliente','new','data-k="clientes"',1)}${B('Cadastrar veículo','new','data-k="veiculos"')}</div></div>`;
   const conts=L('contratos').filter(c=>contratoAtivo(c) && c.kmContratado);
-  return head('Painel',`Hoje, ${dbr(hoje())} · competência ${mesbr(m)}`,`${B('Check-in','go','data-go="uso"')}${B('Gerar fatura','gerarFatura','',1)}`)+
+  return head('Painel',`Hoje, ${dbr(hoje())} · competência ${mesbr(m)}`,`${B('Ver como cliente','verComo','')}${B('Check-in','go','data-go="uso"')}${B('Gerar fatura','gerarFatura','',1)}`)+
   `<div class="stack"><div class="kpis">
     <div class="kpi"><span>Frota</span><b>${ativos.length}</b><small>${vs.length-ativos.length} vendido(s)</small></div>
     <div class="kpi"><span>Alugados</span><b>${cnt('alugado')}</b><small>${cnt('disponivel')} disponível(is)</small></div>
@@ -983,12 +931,18 @@ function tabelaContratos(cs){
 }
 function vContratos(){ const cs=L('contratos').sort((a,b)=>a.inicio<b.inicio?1:-1); return head('Contratos','Um contrato por veículo, com franquia de km própria.',`${B('Pacote de km','new','data-k="pacotes"')}${B('Novo contrato','new','data-k="contratos"',1)}`)+tabelaContratos(cs)+
   `<h3 style="margin-top:22px">Pacotes de km adicional</h3>`+tabela([{h:'Contrato',f:k=>esc(refLabel('contratos',G('contratos',k.contratoId)))},{h:'Km',n:1,f:k=>kmf(k.km)},{h:'Preço',n:1,f:k=>money(k.preco)},{h:'Solicitado',f:k=>dtbr(k.solicitadoEm)},{h:'Situação',f:k=>`<span class="pill ${k.status==='aprovado'?'p-ok':k.status==='faturado'?'p-info':k.status==='recusado'?'p-bad':'p-warn'}">${esc(k.status)}</span>`},{h:'',f:k=>k.status==='solicitado'?`<button class="btn sm" data-act="aprovarPacote" data-id="${k.id}" data-stop>Aprovar</button> <button class="btn sm danger" data-act="recusarPacote" data-id="${k.id}" data-stop>Recusar</button>`:''}],L('pacotes').sort((a,b)=>(a.solicitadoEm||'')<(b.solicitadoEm||'')?1:-1),'Nenhum pacote solicitado.',k=>`data-act="edit" data-k="pacotes" data-id="${k.id}"`); }
-function tabelaUsos(us){ return tabela([{h:'Veículo',f:u=>vCell(u.veiculoId)},{h:'Condutor',f:u=>`<b>${esc(nomeCondutor(u))}</b>${u.retroativo?' <span class="tag">Retroativo</span>':''}${u.registradoAposEvento?' <span class="pill p-warn">Registrado após o evento</span>':''}`},{h:'Início',f:u=>dtbr(u.inicio)},{h:'Fim',f:u=>u.fim?dtbr(u.fim):'<span class="pill p-info">Em uso</span>'},{h:'Km',n:1,f:u=>`${kmf(u.kmInicial)}${u.kmFinal!=null?' → '+kmf(u.kmFinal):''}`},{h:'Rodado',n:1,f:u=>u.kmFinal!=null&&u.kmInicial!=null?kmf(u.kmFinal-u.kmInicial):'—'},{h:'Observações',f:u=>{const o=[u.obsInicio,u.obsFim,u.justificativa].filter(Boolean).map(esc).join(' · '); const g=u.kmSemCondutor>0?`<span class="pill ${u.gapResolvido?'':'p-warn'}">${kmf(u.kmSemCondutor)} sem condutor</span>${u.gapResolvido?'':` <button class="btn sm" data-act="resolverGap" data-id="${u.id}">Marcar resolvido</button>`}`:''; return (u.status==='encerrado_forcado'?'<span class="tag">Encerrado forçado</span> ':'')+o+(g?' '+g:'');}}],us,'Nenhum uso registrado.'); }
+function tabelaUsos(us){ return tabela([{h:'Veículo',f:u=>vCell(u.veiculoId)},{h:'Condutor',f:u=>`<b>${esc(nomeCondutor(u))}</b>${u.retroativo?' <span class="tag">Retroativo</span>':''}${u.registradoAposEvento?' <span class="pill p-warn">Registrado após o evento</span>':''}`},{h:'Início',f:u=>dtbr(u.inicio)},{h:'Fim',f:u=>u.fim?dtbr(u.fim):'<span class="pill p-info">Em uso</span>'},{h:'Km',n:1,f:u=>`${kmf(u.kmInicial)}${u.kmFinal!=null?' → '+kmf(u.kmFinal):''}`},{h:'Rodado',n:1,f:u=>u.kmFinal!=null&&u.kmInicial!=null?kmf(u.kmFinal-u.kmInicial):'—'},{h:'Observações',f:u=>{const o=[u.obsInicio,u.obsFim,u.justificativa].filter(Boolean).map(esc).join(' · '); const g=u.kmSemCondutor>0?`<span class="pill ${u.gapResolvido?'':'p-warn'}">${kmf(u.kmSemCondutor)} sem condutor</span>${u.gapResolvido?'':` <button class="btn sm" data-act="resolverGap" data-id="${u.id}">Marcar resolvido</button>`}`:''; return (u.status==='encerrado_forcado'?'<span class="tag">Encerrado forçado</span> ':'')+o+(g?' '+g:'');}},{h:'Fotos e local',f:usoAnexos}],us,'Nenhum uso registrado.'); }
 function vUso(){
   const vs=L('veiculos').filter(v=>statusVeiculo(v)!=='vendido'); const us=L('usos').sort((a,b)=>a.inicio<b.inicio?1:-1).slice(0,80);
   return head('Uso e check-in','Quem está com cada carro. Data e hora são registradas automaticamente.',B('Registrar uso retroativo','retro'))+
   `<div class="stack"><div class="vgrid">${vs.map(v=>{const u=usoAberto(v.id); const bloq=['manutencao','vendido'].includes(statusVeiculo(v)); return `<div class="card stack" style="gap:10px"><div class="row" style="justify-content:space-between">${placaHTML(v)}${u?'<span class="pill p-info">Em uso</span>':statusPill(v)}</div><div><b>${esc(v.marca)} ${esc(v.modelo)}</b><br><small class="muted">${u?`Com ${esc(nomeCondutor(u))} desde ${dtbr(u.inicio)}`:'Livre · último km '+kmf(kmAtual(v))}</small></div><div class="row">${u?B('Checkout','checkout','data-id="'+v.id+'"',1)+B('Trocar condutor','checkin','data-id="'+v.id+'"'):B('Check-in','checkin','data-id="'+v.id+'"'+(bloq?' disabled':''),1)}</div></div>`;}).join('')||'<div class="empty">Nenhum veículo.</div>'}</div>
   <section><h3>Diário de uso</h3>${tabelaUsos(us)}</section></div>`;
+}
+function vAbastF2(){
+  const m=S.ui.mesAb||mesAtual(); const as=L('abastecimentos').filter(a=>(a.data||'').slice(0,7)===m).sort((a,b)=>a.data<b.data?1:-1);
+  const gasto=as.reduce((s,a)=>s+(+a.valor||0),0), lit=as.reduce((s,a)=>s+(+a.litros||0),0);
+  return head('Abastecimentos','Registrados pelos motoristas e gestores. Combustível é custo do cliente: não entra no resultado da F2, mas alimenta o km e o consumo de cada carro.',`<label class="row muted" for="ab_m">Mês <input id="ab_m" type="month" value="${m}" class="btn" style="font-weight:500"></label>${B('Exportar CSV','csvAbastF2','')}${B('Novo abastecimento','new','data-k="abastecimentos"',1)}`)+
+  `<div class="stack"><div class="kpis"><div class="kpi"><span>Gasto ${mesbr(m)}</span><b>${money(gasto)}</b></div><div class="kpi"><span>Litros</span><b>${nf(lit,1)}</b></div><div class="kpi"><span>Preço médio</span><b>${lit?money(gasto/lit):'—'}</b><small>por litro</small></div>${L('veiculos').filter(v=>statusVeiculo(v)!=='vendido').map(v=>{const x=consumoComb(v.id).media; return x?`<div class="kpi"><span>Consumo ${esc((v.placa||'').toUpperCase())}</span><b>${nf(x,1)} km/l</b></div>`:'';}).join('')}</div>${tabelaAbast(as,true)}</div>`;
 }
 function tabelaChamados(cs){ return tabela([{h:'Nº',f:c=>`<span class="mono">#${c.numero||'?'}</span>`},{h:'Tipo',f:c=>esc(lbl(CH_TIPO,c.tipo))},{h:'Veículo',f:c=>vCell(c.veiculoId)},{h:'Descrição',f:c=>esc((c.descricao||'').slice(0,90))+isEx(c)},{h:'Prioridade',f:c=>`<span class="pill ${c.prioridade==='alta'?'p-bad':c.prioridade==='media'?'p-warn':''}">${esc(c.prioridade||'—')}</span>`},{h:'Situação',f:c=>`<span class="pill ${['resolvido','encerrado'].includes(c.status)?'p-ok':'p-info'}">${esc(lbl(CH_ST,c.status))}</span>`},{h:'Aberto em',f:c=>dtbr(locISO(c.criadoEm))+(c.abertoPeloCliente?'<br><span class="tag">Pelo cliente</span>':'')},{h:'Anexos',f:c=>(c.anexo?arq(c.anexo):'')+arqs(c.anexos)+(c.bo?arq(c.bo):'')}],cs,'Nenhum chamado.',c=>`data-act="edit" data-k="chamados" data-id="${c.id}"`); }
 function tabelaManut(ms){ return tabela([{h:'Data',f:m=>dbr(m.data)},{h:'Veículo',f:m=>vCell(m.veiculoId)},{h:'Categoria',f:m=>esc(catLbl(m.categoria))+isEx(m)},{h:'Quem arca',f:m=>`<span class="pill ${m.arcaCom==='cliente'||m.arcaCom==='mau_uso_cliente'?'':m.arcaCom==='apuracao'?'p-warn':'p-info'}">${esc(arcaLbl(m.arcaCom))}</span>`},{h:'Oficina',f:m=>esc(m.oficina||'—')},{h:'Valor',n:1,f:m=>money(m.valor)},{h:'Parado',f:m=>m.entradaOficina?`${dbr(m.entradaOficina)} – ${m.liberacao?dbr(m.liberacao):'<b>na oficina</b>'}`:'—'},{h:'Próxima',f:m=>[m.proximaData?dbr(m.proximaData):'',m.proximaKm?kmf(m.proximaKm):''].filter(Boolean).join(' · ')||'—'},{h:'NF',f:m=>arq(m.nf)},{h:'Situação',f:m=>esc(m.status||'—')}],ms,'Nenhuma manutenção registrada.',m=>`data-act="edit" data-k="manutencoes" data-id="${m.id}"`); }
@@ -1037,6 +991,9 @@ function vConfig(){
     <div class="fld"><label for="c_dm">Aviso de prazo de multa (dias antes)</label><input id="c_dm" type="number" value="${P.diasAvisoMulta}"></div>
     <div class="fld"><label for="c_le">Limite de autonomia em emergência (R$)</label><input id="c_le" type="number" step="0.01" value="${P.limiteEmergencia}"></div>
     <div class="fld"><label for="c_cr">Carência padrão para desconto de dias parados</label><input id="c_cr" type="number" value="${P.carenciaPadrao}"></div></div>
+    <h3 style="margin-top:16px">Manutenção preventiva padrão (cada veículo pode ter o seu)</h3><div class="fgrid">
+    ${[['pvRevKm','Revisão a cada (km)'],['pvRevMeses','Revisão a cada (meses)'],['pvOleoKm','Óleo a cada (km)'],['pvOleoMeses','Óleo a cada (meses)'],['pvAlinKm','Alinhamento a cada (km)'],['pvAlinMeses','Alinhamento a cada (meses)']].map(([k,l])=>`<div class="fld"><label for="pv_${k}">${l}</label><input id="pv_${k}" type="number" value="${esc((P.prev||{})[k]??'')}"></div>`).join('')}
+    <div class="fld"><label for="c_pak">Avisar quando faltar (km)</label><input id="c_pak" type="number" value="${P.prevAvisoKm}"></div><div class="fld"><label for="c_pad">Avisar quando faltar (dias)</label><input id="c_pad" type="number" value="${P.prevAvisoDias}"></div></div>
     <h3 style="margin-top:16px">Matriz de responsabilidade de custos</h3><div class="fgrid">${CATS.map(c=>`<div class="fld"><label for="mz_${c[0]}">${esc(c[1])}</label><select id="mz_${c[0]}">${ARCA.slice(0,3).map(a=>`<option value="${a[0]}"${arcaPadrao(c[0])===a[0]?' selected':''}>${esc(a[1])}</option>`).join('')}</select></div>`).join('')}</div>
     <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn pri" type="submit">Salvar parâmetros</button></div></form>
   <section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Modelos de plano</h3>${B('Novo modelo','novoPlano')}</div>
@@ -1052,14 +1009,14 @@ function vAuditoria(){
 /* ===================== vistorias e usuários (painel F2) ===================== */
 function tabelaVist(vs){ return tabela([{h:'Data',f:x=>dtbr(x.data)},{h:'Veículo',f:x=>vCell(x.veiculoId)},{h:'Tipo',f:x=>esc(VIST_T[x.tipo]||x.tipo)},{h:'Km',n:1,f:x=>kmf(x.km)},{h:'Combustível',f:x=>esc(x.combustivel||'—')},
   {h:'Avarias',f:x=>{const n=Object.keys(x.checklist||{}).length; return (n?`<span class="pill p-warn">${n} item(ns)</span> `:'<span class="pill p-ok">Sem avarias</span> ')+esc((x.avarias||'').slice(0,60));}},
-  {h:'Fotos',f:x=>arqs(x.fotos)||'—'},{h:'Aceite',f:x=>`<span class="pill ${x.status==='aceita'?'p-ok':x.status==='contestada'?'p-bad':x.status==='aguardando_aceite'?'p-warn':''}">${esc(VIST_ST[x.status]||x.status)}</span>${x.contestacao?'<br><small>'+esc(x.contestacao)+'</small>':''}`}],
+  {h:'Fotos',f:x=>arqs(fotosVist(x))||'—'},{h:'Aceite',f:x=>`<span class="pill ${x.status==='aceita'?'p-ok':x.status==='contestada'?'p-bad':x.status==='aguardando_aceite'?'p-warn':''}">${esc(VIST_ST[x.status]||x.status)}</span>${x.contestacao?'<br><small>'+esc(x.contestacao)+'</small>':''}${x.condutorNome?'<br><small class="muted">por '+esc(x.condutorNome)+'</small>':''}${x.status==='enviada'?` <button class="btn sm" data-act="revisarVist" data-id="${x.id}" data-stop>Marcar revisada</button>`:''}`}],
   vs,'Nenhuma vistoria registrada.',x=>`data-act="edit" data-k="vistorias" data-id="${x.id}"`); }
 function vVistorias(){ return head('Vistorias','Entrega, devolução e periódicas, com checklist, fotos e aceite do cliente no portal.',B('Nova vistoria','new','data-k="vistorias"',1))+tabelaVist(L('vistorias').sort((a,b)=>a.data<b.data?1:-1)); }
 function secUsuarios(){
   if(!S.me || S.me.perfil!=='admin') return '';
   const ps=(S.perfis||[]).slice().sort((a,b)=>(a.perfil==='pendente'?0:1)-(b.perfil==='pendente'?0:1)||String(a.nome).localeCompare(String(b.nome)));
   return `<section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Usuários</h3>${B('Atualizar lista','recarregarPerfis','','')}</div>
-  <p class="muted" style="margin:0 0 10px">Cada pessoa cria a própria conta na tela de entrada (Criar conta). Ela aparece aqui como pendente: escolha o perfil, o cliente (para gestor e condutor) e ative.</p>
+  <p class="muted" style="margin:0 0 10px">Cada pessoa cria a própria conta na tela de entrada (Criar conta). Ela aparece aqui como pendente: escolha o perfil, o cliente (para gestor e condutor) e ative. Motoristas também podem ser liberados pelo gestor do cliente, na aba Motoristas do app.</p>
   ${tabela([{h:'Nome',f:p=>`<b>${esc(p.nome||'—')}</b>`},{h:'E-mail',f:p=>esc(p.email||'')},{h:'Perfil',f:p=>`<span class="pill ${p.perfil==='pendente'?'p-warn':'p-info'}">${esc(lbl(PERFIS,p.perfil))}</span>`},{h:'Cliente',f:p=>esc(p.cliente_id?nomeCliente(p.cliente_id):'—')},{h:'Ativo',f:p=>p.ativo?'Sim':'<span class="pill p-bad">Não</span>'},{h:'Último acesso',f:p=>dtbr(locISO(p.ultimo_acesso))}],ps,'Nenhum usuário.',p=>`data-act="perfil" data-id="${p.id}"`)}</section>`;
 }
 function openPerfil(id){
@@ -1094,7 +1051,7 @@ function secDados(){
 function vVeiculo(id){
   const v=G('veiculos',id); if(!v) return head('Veículo não encontrado');
   const t=S.ui.vtab; const c=contratoDoVeiculo(id); const u=usoAberto(id); const cs=L('contratos').filter(x=>x.veiculoId===id).sort((a,b)=>a.inicio<b.inicio?1:-1);
-  const TABS=[['resumo','Resumo'],['contrato','Contrato'],['historico','Histórico'],['uso','Uso'],['km','Quilometragem'],['docs','Documentação'],['manut','Manutenções'],['chamados','Chamados'],['multas','Multas'],['vist','Vistorias'],['fin','Financeiro']];
+  const TABS=[['resumo','Resumo'],['contrato','Contrato'],['historico','Histórico'],['uso','Uso'],['km','Quilometragem'],['docs','Documentação'],['manut','Manutenções'],['chamados','Chamados'],['multas','Multas'],['vist','Vistorias'],['abast','Abastecimento'],['fin','Financeiro']];
   let body='';
   if(t==='resumo'){
     const al=alertas().filter(a=>a.go&&a.go.id===id);
@@ -1137,7 +1094,8 @@ function vVeiculo(id){
       <div class="row">${B('Registrar leitura','new','data-k="leituras" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}</div>
       ${tabela([{h:'Data',f:l=>dtbr(l.data)},{h:'Km',n:1,f:l=>kmf(l.km)},{h:'Origem',f:l=>esc(l.origem)},{h:'Status',f:l=>l.suspeita?'<span class="pill p-bad">Suspeita</span>':`<span class="pill ${l.status==='verificada'?'p-ok':''}">${esc(l.status)}</span>`},{h:'Foto',f:l=>arq(l.foto)},{h:'',f:l=>l.status!=='verificada'&&!l.suspeita?`<button class="btn sm" data-act="verificar" data-id="${l.id}">Verificar</button>`:l.suspeita?`<button class="btn sm" data-act="liberarSusp" data-id="${l.id}">Não é suspeita</button>`:''}],ls,'Nenhuma leitura.')}</div>`;
   } else if(t==='docs'){ body=`<div class="stack"><div>${B('Novo documento','new','data-k="documentos" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}</div>${tabelaDocs(L('documentos').filter(d=>d.veiculoId===id))}</div>`; }
-  else if(t==='manut'){ body=`<div class="stack"><div>${B('Nova manutenção','new','data-k="manutencoes" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}</div>${tabelaManut(L('manutencoes').filter(m=>m.veiculoId===id).sort((a,b)=>a.data<b.data?1:-1))}</div>`; }
+  else if(t==='abast'){ const as=L('abastecimentos').filter(a=>a.veiculoId===id).sort((a,b)=>a.data<b.data?1:-1); const mm=consumoComb(id).media; body=`<div class="stack"><div class="row">${B('Novo abastecimento','new','data-k="abastecimentos" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}<span class="muted">Consumo médio: <b>${mm?nf(mm,1)+' km/l':'—'}</b></span></div>${tabelaAbast(as,false)}</div>`; }
+  else if(t==='manut'){ body=`<div class="stack">${prevHTML(v,false)}<div>${B('Nova manutenção','new','data-k="manutencoes" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}</div>${tabelaManut(L('manutencoes').filter(m=>m.veiculoId===id).sort((a,b)=>a.data<b.data?1:-1))}</div>`; }
   else if(t==='chamados'){ body=`<div class="stack"><div>${B('Novo chamado','new','data-k="chamados" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}</div>${tabelaChamados(L('chamados').filter(m=>m.veiculoId===id))}</div>`; }
   else if(t==='multas'){ body=`<div class="stack"><div>${B('Nova multa','new','data-k="multas" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}</div>${tabela([{h:'Infração',f:m=>dtbr(m.dataHora)},{h:'Auto',f:m=>esc(m.auto||'—')},{h:'Valor',n:1,f:m=>money(m.valor)},{h:'Condutor',f:m=>{const u2=condutorSugerido(id,m.dataHora); return esc(m.condutorConfirmado||(u2?nomeCondutor(u2)+' (sugerido)':'não identificado'));}}],L('multas').filter(m=>m.veiculoId===id),'Nenhuma multa.',m=>`data-act="edit" data-k="multas" data-id="${m.id}"`)}</div>`; }
   else if(t==='vist'){ body=`<div class="stack"><div>${B('Nova vistoria','new','data-k="vistorias" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}</div>${tabelaVist(L('vistorias').filter(x=>x.veiculoId===id).sort((a,b)=>a.data<b.data?1:-1))}</div>`; }
@@ -1145,7 +1103,7 @@ function vVeiculo(id){
     body=`<div class="stack"><div class="kpis"><div class="kpi"><span>Receita acumulada</span><b>${money(r.rec)}</b></div><div class="kpi"><span>Custo acumulado</span><b>${money(r.cus)}</b></div><div class="kpi"><span>Resultado operacional</span><b>${money(r.res)}</b><small>${r.mg!=null?'Margem '+nf(r.mg)+'%':''}</small></div><div class="kpi"><span>Capital investido</span><b>${money(inv)}</b></div></div>${tabelaLanc(L('lancamentos').filter(l=>l.veiculoId===id).sort((a,b)=>a.competencia<b.competencia?1:-1))}</div>`; }
   return `<p class="muted" style="margin:0 0 6px"><button class="btn ghost sm" data-go="veiculos">‹ Veículos</button></p>`+
     head(`<span class="row" style="gap:14px">${placaHTML(v,1)}<span>${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao||'')}${isEx(v)}</span></span>`,`${statusPill(v)} &nbsp;${kmf(kmAtual(v))}${c?' · '+esc(nomeCliente(c.clienteId)):''}`,
-      `${B('Editar','edit','data-k="veiculos" data-id="'+id+'"')}${statusVeiculo(v)!=='vendido'?B('Registrar venda','venda','data-id="'+id+'"'):''}${u?B('Checkout','checkout','data-id="'+id+'"',1):B('Check-in','checkin','data-id="'+id+'"',1)}`)+
+      `${B('QR code','qr','data-id="'+id+'"')}${B('Editar','edit','data-k="veiculos" data-id="'+id+'"')}${statusVeiculo(v)!=='vendido'?B('Registrar venda','venda','data-id="'+id+'"'):''}${u?B('Checkout','checkout','data-id="'+id+'"',1):B('Check-in','checkin','data-id="'+id+'"',1)}`)+
     `<div class="tabs" role="tablist">${TABS.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-vtab="${k}">${l}</button>`).join('')}</div>`+body;
 }
 function kmChart(ls){
@@ -1176,7 +1134,7 @@ function render(){
   switch(r.view){
     case 'painel': h=vPainel(al); break; case 'clientes': h=vClientes(); break; case 'cliente': h=vCliente(r.id); break;
     case 'veiculos': h=vVeiculos(); break; case 'veiculo': h=vVeiculo(r.id); break; case 'contratos': h=vContratos(); break;
-    case 'uso': h=vUso(); break; case 'manut': h=vManut(); break; case 'reemb': h=vReemb(); break; case 'multas': h=vMultas(); break;
+    case 'uso': h=vUso(); break; case 'abast': h=vAbastF2(); break; case 'manut': h=vManut(); break; case 'reemb': h=vReemb(); break; case 'multas': h=vMultas(); break;
     case 'docs': h=vDocs(); break; case 'vistorias': h=vVistorias(); break; case 'faturas': h=vFaturas(); break; case 'financeiro': h=vFinanceiro(); break; case 'config': h=vConfig(); break; case 'auditoria': h=vAuditoria(); break;
   }
   const sy=window.scrollY; main.innerHTML=h; window.scrollTo(0,sy);
@@ -1191,8 +1149,21 @@ document.addEventListener('click', async e=>{
   const el=e.target.closest('[data-act],[data-go]'); if(!el) return;
   if(el.dataset.go && !el.dataset.act){ go(el.dataset.go, el.dataset.id, el.dataset.tab); return; }
   const a=el.dataset.act, id=el.dataset.id;
+  if(S.preview && !ACOES_VER.includes(a)){ toast('Modo visualização: as ações ficam desativadas.'); return; }
   try{
     if(a==='sair') sair();
+    else if(a==='verComo') openVerComo();
+    else if(a==='sairVerComo') sairVerComo();
+    else if(a==='pvtab'){ S.p.vtab=el.dataset.tab||'resumo'; render(); }
+    else if(a==='qr') await openQR(id);
+    else if(a==='seguro') openSeguro(id);
+    else if(a==='pformV'){ const vid=id||await escolherVeiculo(); if(vid) openForm(el.dataset.k,null,{veiculoId:vid}); }
+    else if(a==='csvUso') csv(`uso-veiculos-${hoje()}.csv`,S._usosP||[],[['Placa',u=>PL(u.veiculoId)],['Condutor',u=>nomeCondutor(u)],['Início',u=>dtbr(u.inicio)],['Fim',u=>u.fim?dtbr(u.fim):'em uso'],['Km inicial',u=>u.kmInicial??''],['Km final',u=>u.kmFinal??''],['Rodado',u=>u.kmFinal!=null&&u.kmInicial!=null?u.kmFinal-u.kmInicial:''],['Retroativo',u=>u.retroativo?'sim':''],['Observações',u=>[u.obsInicio,u.obsFim,u.justificativa].filter(Boolean).join(' · ')]]);
+    else if(a==='csvAbast') csvAbast(S._abastP||[]);
+    else if(a==='csvAbastF2') csvAbast(L('abastecimentos').filter(x=>(x.data||'').slice(0,7)===(S.ui.mesAb||mesAtual())));
+    else if(a==='aprovarCond'||a==='bloquearCond'){ const ok=a==='aprovarCond' || await perguntar('Bloquear motorista','Ele deixa de conseguir fazer check-in e perde o acesso ao app.','Bloquear'); if(!ok) return;
+      const {error}=await Supa.sb.rpc('f2_aprovar_condutor',{p_condutor:id,p_aprovar:a==='aprovarCond'}); if(error) throw erroSupa(error); await carregarPerfis(); render(); toast(a==='aprovarCond'?'Motorista liberado.':'Motorista bloqueado.'); }
+    else if(a==='revisarVist'){ await salvar('vistorias',id,{status:'revisada',revisadoPor:S.uid,revisadoEm:new Date().toISOString()},'revisou vistoria'); toast('Vistoria marcada como revisada.'); }
     else if(a==='perfil') openPerfil(id);
     else if(a==='recarregarPerfis'){ await carregarPerfis(); render(); toast('Lista de usuários atualizada.'); }
     else if(a==='ptab'){ S.p.tab=el.dataset.tab||'inicio'; S.p.vid=null; window.scrollTo(0,0); render(); }
@@ -1206,7 +1177,6 @@ document.addEventListener('click', async e=>{
     else if(a==='aceitarVist'){ const ok=await perguntar('Aceitar vistoria','Ao aceitar, você confirma que o estado do veículo descrito na vistoria está correto.','Aceitar'); if(ok){ await salvar('vistorias',id,{status:'aceita',aceiteEm:new Date().toISOString(),aceitoPor:S.uid},'aceitou vistoria'); toast('Vistoria aceita.'); } }
     else if(a==='contestarVist'){ const t=await perguntar('Contestar vistoria','Descreva o que não confere com o veículo:','Enviar contestação',true); if(t!==null){ await salvar('vistorias',id,{status:'contestada',contestacao:t,contestadoPor:S.uid},'contestou vistoria'); toast('Contestação enviada à F2.'); } }
     else if(a==='indicarMulta'){ const sug=el.dataset.nome; const t=await perguntar('Indicar condutor',`Informe o nome completo de quem dirigia.${sug?' Sugestão pelo check-in: <b>'+esc(sug)+'</b>.':''}`,'Indicar',true); if(t!==null){ await salvar('multas',id,{condutorConfirmado:t,indicadoPeloCliente:true,indicadoEm:new Date().toISOString()},'indicou condutor'); toast('Condutor indicado. A F2 fará a indicação ao órgão.'); } }
-    else if(a==='condStatus'){ await salvar('condutores',id,{status:el.dataset.st},'alterou condutor'); toast('Condutor atualizado.'); }
     else if(a==='new') openForm(el.dataset.k,null,el.dataset.preset?JSON.parse(el.dataset.preset):null);
     else if(a==='edit') openForm(el.dataset.k,id);
     else if(a==='checkin') openCheckin(id);
@@ -1229,11 +1199,11 @@ document.addEventListener('click', async e=>{
   }catch(ex){ toast(errMsg(ex)); }
 });
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'){ const al=e.target.closest&&e.target.closest('[data-al]'); if(al) al.click(); } });
-document.addEventListener('change',e=>{ if(e.target.id==='fin_m'){ S.ui.mes=e.target.value||mesAtual(); render(); } });
+document.addEventListener('change',e=>{ if(e.target.id==='fin_m'){ S.ui.mes=e.target.value||mesAtual(); render(); } if(e.target.id==='ab_m'){ S.ui.mesAb=e.target.value||mesAtual(); render(); } const k=e.target.dataset&&e.target.dataset.pf; if(k && S.p){ S.p.f=S.p.f||{}; S.p.f[k]=e.target.value; render(); } });
 async function salvarCfg(p){ const n={...(G('config','geral')||{}),...p,atualizadoEm:new Date().toISOString(),atualizadoPor:S.uid}; await S.db.doc('config/geral').set(limpa(n)); audit('alterou parâmetros','config','geral',Object.keys(p).join(', ')); toast('Configurações salvas.'); }
 function bindConfig(){ const imp=$('#cf_imp'); if(imp) imp.onchange=e=>{ const fl=e.target.files[0]; e.target.value=''; if(fl) importar(fl); }; const f=$('#cfgf'); if(!f) return; f.onsubmit=async e=>{ e.preventDefault(); const g=id=>f.querySelector(id).value;
   const matriz={}; CATS.forEach(c=>matriz[c[0]]=f.querySelector('#mz_'+c[0]).value);
-  try{ await salvarCfg({alertasKm:g('#c_al').split(',').map(x=>+x.trim()).filter(x=>x>0).sort((a,b)=>a-b),horasCheckin:+g('#c_hc')||14,diasProjecao:+g('#c_dp')||30,diasAvisoVenc:+g('#c_dv')||30,diasAvisoMulta:+g('#c_dm')||5,limiteEmergencia:+g('#c_le')||0,carenciaPadrao:+g('#c_cr')||0,matriz}); }catch(ex){ toast(errMsg(ex)); } }; }
+  try{ await salvarCfg({alertasKm:g('#c_al').split(',').map(x=>+x.trim()).filter(x=>x>0).sort((a,b)=>a-b),horasCheckin:+g('#c_hc')||14,diasProjecao:+g('#c_dp')||30,diasAvisoVenc:+g('#c_dv')||30,diasAvisoMulta:+g('#c_dm')||5,limiteEmergencia:+g('#c_le')||0,carenciaPadrao:+g('#c_cr')||0,matriz,prev:Object.fromEntries(['pvRevKm','pvRevMeses','pvOleoKm','pvOleoMeses','pvAlinKm','pvAlinMeses'].map(k=>[k,+g('#pv_'+k)||0])),prevAvisoKm:+g('#c_pak')||1000,prevAvisoDias:+g('#c_pad')||30}); }catch(ex){ toast(errMsg(ex)); } }; }
 function openPlano(){
   const dlg=$('#dlg'); dlg.innerHTML=`<form id="frm"><div class="dh"><h2>Novo modelo de plano</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc"><div class="fgrid">
     <div class="fld full"><label for="pl_n">Nome</label><input id="pl_n" placeholder="Ex.: Executivo 24m · 2.000 km"></div><div class="fld"><label for="pl_p">Prazo (meses)</label><input id="pl_p" type="number" required></div><div class="fld"><label for="pl_k">Franquia (km/mês)</label><input id="pl_k" type="number" required></div>
@@ -1250,115 +1220,519 @@ function openPlano(){
 const ehEquipe = () => !!S.me && ['admin','operacional','financeiro'].includes(S.me.perfil);
 const ehCliente = () => !!S.me && ['gestor','condutor'].includes(S.me.perfil);
 const ehGestor = () => !!S.me && S.me.perfil==='gestor';
+const ehCondutor = () => !!S.me && S.me.perfil==='condutor';
 const nomeUsuario = id => { if(S.me && id===S.me.id) return S.me.nome; const p=(S.perfis||[]).find(x=>x.id===id); return p ? (p.nome||p.email) : 'Usuário'; };
+/* Registros que o banco libera para este cliente (mesma regra do RLS; vale também no modo "Ver como"). */
+const cidReg = (col,id) => (Store.docs[col+'/'+id]||{}).cid;
+const LC = col => L(col).filter(d => cidReg(col,d.id)===S.me.clienteId);
 function contratosAtivosCli(){ return L('contratos').filter(c=>c.clienteId===S.me.clienteId && contratoAtivo(c)); }
+function contratosCli(){ return L('contratos').filter(c=>c.clienteId===S.me.clienteId).sort((a,b)=>a.inicio<b.inicio?1:-1); }
 function idsVeic(){ return new Set(contratosAtivosCli().map(c=>c.veiculoId)); }
+function veicsCli(){ return [...idsVeic()].map(id=>G('veiculos',id)).filter(Boolean).sort((a,b)=>String(a.placa).localeCompare(String(b.placa))); }
 function meuCondutor(){ return S.me.condutorId ? G('condutores',S.me.condutorId) : null; }
+const ehMeu = d => !!d && ((S.me.condutorId && d.condutorId===S.me.condutorId) || d.criadoPor===S.uid);
+function meuUsoAberto(){ if(!S.me.condutorId) return null; return L('usos').find(u=>u.status==='em_uso' && u.condutorId===S.me.condutorId && idsVeic().has(u.veiculoId)) || null; }
+const pillCli = v => statusVeiculo(v)==='alugado' ? '<span class="pill p-ok">Livre</span>' : statusPill(v);
+const PL = id => ((G('veiculos',id)||{}).placa||'').toUpperCase();
+
+/* ---------- utilidades de campo: localização, fotos, CSV ---------- */
+function pegarLocal(){ return new Promise(res=>{ if(!navigator.geolocation) return res(null); let ok=false; const fim=v=>{ if(ok) return; ok=true; res(v); };
+  setTimeout(()=>fim(null),9000);
+  try{ navigator.geolocation.getCurrentPosition(p=>fim({lat:+p.coords.latitude.toFixed(6),lng:+p.coords.longitude.toFixed(6),precisao:Math.round(p.coords.accuracy||0)}),()=>fim(null),{enableHighAccuracy:true,timeout:8000,maximumAge:60000}); }catch(e){ fim(null); } }); }
+const mapa = l => l && l.lat!=null ? `<a href="https://www.google.com/maps?q=${l.lat},${l.lng}" target="_blank" rel="noopener">Mapa</a>` : '';
+async function enviarArqs(input, cid, sub, rotulo){ const out=[]; if(!input||!input.files||!input.files.length) return out; let n=0;
+  for(const fl of input.files){ if(sub) sub.textContent=`Enviando ${rotulo||'foto'} ${++n}/${input.files.length}…`; const r=await S.assets.upload(fl,cid); out.push({id:r.id,nome:fl.name}); } return out; }
+function csv(nome, linhas, cols){ const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
+  const txt='﻿'+[cols.map(c=>q(c[0])).join(';')].concat(linhas.map(r=>cols.map(c=>q(c[1](r))).join(';'))).join('\r\n');
+  baixarArquivo(nome, new Blob([txt],{type:'text/csv;charset=utf-8'})); }
+const addMeses = (iso,n) => { const d=new Date(iso.slice(0,10)+'T12:00'); d.setMonth(d.getMonth()+(+n)); return isoD(d); };
+function kmNoPeriodo(vid, ini, fim){ const ls=leiturasV(vid); const dentro=ls.filter(l=>{const d=l.data.slice(0,10); return d>=ini&&d<=fim;}); if(!dentro.length) return 0;
+  const antes=ls.filter(l=>l.data.slice(0,10)<ini); const base=antes.length? +antes[antes.length-1].km : Math.min(...dentro.map(l=>+l.km));
+  return Math.max(0, Math.max(...dentro.map(l=>+l.km))-base); }
+function usoAnexos(u){ const b=[]; if(u.fotoOdoIni) b.push(`<button type="button" class="btn ghost sm" data-file="${esc(u.fotoOdoIni)}">Odômetro (início)</button>`); if(u.fotoOdoFim) b.push(`<button type="button" class="btn ghost sm" data-file="${esc(u.fotoOdoFim)}">Odômetro (fim)</button>`);
+  const fs=(u.fotosIni||[]).concat(u.fotosFim||[]); if(fs.length) b.push(arqs(fs)); const m=[mapa(u.localIni),mapa(u.localFim)].filter(Boolean); if(m.length) b.push(m.join(' · ')); return b.join(' ') || '—'; }
+
+/* ---------- manutenção preventiva ---------- */
+const PREV_ITENS=[['preventiva','Revisão','pvRevKm','pvRevMeses'],['oleo','Troca de óleo','pvOleoKm','pvOleoMeses'],['alinhamento','Alinhamento e balanceamento','pvAlinKm','pvAlinMeses']];
+function preventivas(v){
+  const P=cfg(); const pd0=P.prev||{}; const km=kmAtual(v); const h=hoje(); const out=[];
+  for(const [cat,nome,kk,km_] of PREV_ITENS){
+    const ik=+(v[kk]||pd0[kk]||0), im=+(v[km_]||pd0[km_]||0);
+    const m=L('manutencoes').filter(x=>x.veiculoId===v.id&&x.categoria===cat&&!['cancelada','agendada'].includes(x.status)).sort((a,b)=>a.data<b.data?1:-1)[0];
+    let pk=null, pd=null, base='ultimo';
+    if(m){ pk = m.proximaKm ? +m.proximaKm : (ik && m.km ? +m.km+ik : null); pd = m.proximaData || (im && m.data ? addMeses(m.data,im) : null); }
+    else if(ik||im){ base='cadastro'; pk = ik ? (+v.kmInicial||0)+ik : null; pd = im && v.aqData ? addMeses(v.aqData,im) : null; }
+    if(pk==null && !pd) continue;
+    const faltaKm = pk!=null ? pk-km : null, faltaD = pd ? diff(h,pd) : null;
+    const st = ((faltaKm!=null&&faltaKm<=0)||(faltaD!=null&&faltaD<0)) ? 'vencida' : ((faltaKm!=null&&faltaKm<=(+P.prevAvisoKm||1000))||(faltaD!=null&&faltaD<=(+P.prevAvisoDias||30))) ? 'proxima' : 'ok';
+    out.push({cat,nome,ult:m||null,pk,pd,faltaKm,faltaD,st,base});
+  }
+  return out;
+}
+const PREV_ST={ok:['p-ok','Em dia'],proxima:['p-warn','Próxima'],vencida:['p-bad','Vencida']};
+function prevHTML(v, comBotao){
+  const ps=preventivas(v);
+  const linhas=ps.map(p=>`<div class="row" style="justify-content:space-between;align-items:flex-start;border-top:1px solid var(--line);padding-top:8px"><div style="min-width:0"><b>${esc(p.nome)}</b> <span class="pill ${PREV_ST[p.st][0]}">${PREV_ST[p.st][1]}</span><br>
+    <small class="muted">Próxima: ${[p.pk!=null?kmf(p.pk)+(p.faltaKm!=null?(p.faltaKm>0?' (faltam '+kmf(p.faltaKm)+')':' (passou '+kmf(-p.faltaKm)+')'):''):'',p.pd?'até '+dbr(p.pd):''].filter(Boolean).join(' · ')}</small><br>
+    <small class="muted">${p.ult?'Último: '+dbr(p.ult.data)+(p.ult.km?' · '+kmf(p.ult.km):''):'Sem serviço registrado: estimativa pelo cadastro do veículo'}</small></div></div>`).join('');
+  return `<section class="card stack" style="gap:8px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Manutenção preventiva</h3>${comBotao?B('Registrar serviço feito','pform','data-k="p_preventiva" data-id="'+v.id+'"'):''}</div>
+    ${linhas||'<p class="muted" style="margin:0">Nenhum plano de preventiva definido para este veículo.</p>'}<small class="muted">Combustível, revisões, óleo e alinhamento ficam a cargo do cliente. Registre cada serviço com a nota para manter o histórico do carro.</small></section>`;
+}
+
+/* ---------- abastecimento ---------- */
+const COMB=[['gasolina','Gasolina'],['etanol','Etanol'],['diesel','Diesel'],['gnv','GNV'],['eletrico','Recarga elétrica']];
+function consumoComb(vid){
+  const fs=L('abastecimentos').filter(a=>a.veiculoId===vid && +a.km>0).sort((a,b)=>+a.km-+b.km); const kml={}; let ultCheio=null, litros=0, totKm=0, totL=0;
+  for(const a of fs){ litros+=+a.litros||0; if(a.tanqueCheio){ if(ultCheio && +a.km>+ultCheio.km && litros>0){ kml[a.id]=(+a.km-+ultCheio.km)/litros; totKm+=+a.km-+ultCheio.km; totL+=litros; } ultCheio=a; litros=0; } }
+  return {kml, media: totL? totKm/totL : null};
+}
+SCHEMA.abastecimentos={col:'abastecimentos',titulo:'Abastecimento',fields:[
+  {k:'veiculoId',l:'Veículo',t:'ref',ref:'veiculos',req:1,filter:v=>statusVeiculo(v)!=='vendido' && (!ehCliente()||idsVeic().has(v.id))},{k:'data',l:'Data e hora',t:'dt',req:1,defFn:agora},
+  {k:'km',l:'Km do odômetro',t:'num',req:1},{k:'combustivel',l:'Combustível',t:'sel',opts:opt(COMB),req:1,def:'gasolina'},
+  {k:'litros',l:'Litros',t:'num',step:'0.01',req:1},{k:'valor',l:'Valor pago (R$)',t:'money',req:1},
+  {k:'tanqueCheio',l:'Completei o tanque',t:'bool',def:true},{k:'posto',l:'Posto'},
+  {k:'nota',l:'Foto da nota ou cupom',t:'file',accept:'image/*,application/pdf',full:1},{k:'fotoOdometro',l:'Foto do odômetro (opcional)',t:'file',accept:'image/*',full:1},
+  {k:'obs',l:'Observação',t:'area',full:1}],
+  async save(v,id,antes){
+    if(+v.litros<=0) throw 'Informe a quantidade de litros.';
+    v.precoLitro = +v.litros>0 ? r2(+v.valor/+v.litros*1000)/1000 : null;
+    const c=contratoDoVeiculo(v.veiculoId,(v.data||hoje()).slice(0,10)); v.contratoId=c?c.id:null; v.clienteId=c?c.clienteId:null;
+    if(!antes){ const mc=ehCondutor()?meuCondutor():null; v.condutorId=mc?mc.id:(v.condutorId||null); v.condutorNome=mc?mc.nome:(v.condutorNome||S.me.nome); }
+    const vv=G('veiculos',v.veiculoId); const suspeita = vv ? +v.km<kmAtual(vv) : false;
+    const nid=await salvar('abastecimentos',id,v,antes?'editou abastecimento':'registrou abastecimento');
+    if(!antes) await salvar('leituras',null,{veiculoId:v.veiculoId,km:+v.km,data:v.data,origem:'abastecimento',status:'informada',suspeita,foto:v.fotoOdometro||null,origemId:nid},'registrou km');
+    return nid; }};
+SCHEMA.p_abastecimento={col:'abastecimentos',titulo:'Registrar abastecimento',fixo:1,fields:[{k:'veiculoId',t:'hidden'}].concat(SCHEMA.abastecimentos.fields.filter(f=>f.k!=='veiculoId')),
+  async save(v){ return SCHEMA.abastecimentos.save(v,null,null); }};
+function tabelaAbast(as, comVeic){ const k2={}; for(const vid of new Set(as.map(a=>a.veiculoId))) Object.assign(k2,consumoComb(vid).kml);
+  return tabela([{h:'Data',f:a=>dtbr(a.data)},...(comVeic?[{h:'Veículo',f:a=>vCell(a.veiculoId)}]:[]),{h:'Condutor',f:a=>esc(a.condutorNome||'—')},{h:'Combustível',f:a=>esc(lbl(COMB,a.combustivel))+(a.tanqueCheio?' <span class="tag">Cheio</span>':'')},
+    {h:'Litros',n:1,f:a=>nf(a.litros,2)},{h:'Valor',n:1,f:a=>money(a.valor)},{h:'R$/litro',n:1,f:a=>a.precoLitro?money(a.precoLitro):'—'},{h:'Km',n:1,f:a=>kmf(a.km)},{h:'Consumo',n:1,f:a=>k2[a.id]?nf(k2[a.id],1)+' km/l':'—'},{h:'Nota',f:a=>arq(a.nota)}],as,'Nenhum abastecimento registrado.'); }
+function csvAbast(as){ csv(`abastecimentos-${hoje()}.csv`,as,[['Data',a=>dtbr(a.data)],['Placa',a=>PL(a.veiculoId)],['Condutor',a=>a.condutorNome||''],['Combustível',a=>lbl(COMB,a.combustivel)],['Litros',a=>nf(a.litros,2)],['Valor (R$)',a=>nf(a.valor,2)],['R$/litro',a=>a.precoLitro?nf(a.precoLitro,3):''],['Km',a=>a.km],['Tanque cheio',a=>a.tanqueCheio?'sim':'não'],['Posto',a=>a.posto||'']]); }
+
+/* ---------- vistoria feita pelo condutor, seguro e documentos ---------- */
+const VIST_FOTOS=[['fFrente','Frente'],['fTraseira','Traseira'],['fEsq','Lateral esquerda'],['fDir','Lateral direita'],['fPainel','Painel com odômetro'],['fInterior','Interior']];
+const fotosVist = x => VIST_FOTOS.filter(([k])=>x[k]).map(([k,n])=>({id:x[k],nome:n})).concat(x.fotos||[]);
+const COMB_NIVEL=opt([['reserva','Reserva'],['1/4','1/4'],['1/2','1/2'],['3/4','3/4'],['cheio','Cheio']]);
+SCHEMA.p_vistoria={col:'vistorias',titulo:'Vistoria com fotos',fixo:1,fields:[{k:'veiculoId',t:'hidden'},
+  {k:'momento',l:'Quando',t:'sel',opts:opt([['retirada','Ao pegar o carro'],['devolucao','Ao devolver o carro'],['periodica','Conferência de rotina']]),req:1,def:'retirada'},
+  {k:'km',l:'Km do odômetro',t:'num',req:1},{k:'combustivel',l:'Nível de combustível',t:'sel',opts:COMB_NIVEL},
+  {sec:'Fotos do carro'},
+  {k:'fFrente',l:'Frente',t:'file',accept:'image/*',req:1},{k:'fTraseira',l:'Traseira',t:'file',accept:'image/*',req:1},
+  {k:'fEsq',l:'Lateral esquerda',t:'file',accept:'image/*',req:1},{k:'fDir',l:'Lateral direita',t:'file',accept:'image/*',req:1},
+  {k:'fPainel',l:'Painel com odômetro',t:'file',accept:'image/*',req:1},{k:'fInterior',l:'Interior',t:'file',accept:'image/*'},
+  {k:'checklist',l:'Marque o que tem avaria ou problema',t:'checklist',opts:VIST_ITENS,full:1},
+  {k:'avarias',l:'Descreva as avarias',t:'area',full:1},{k:'fotos',l:'Fotos das avarias',t:'files',accept:'image/*',full:1},
+  {k:'abrirChamado',l:'Avisar a F2 sobre as avarias (abre um chamado)',t:'bool'}],
+  async save(v){ const mc=ehCondutor()?meuCondutor():null; const t=agora(); const c=contratoDoVeiculo(v.veiculoId);
+    const nAv=Object.keys(v.checklist||{}).length; const abrir=v.abrirChamado; delete v.abrirChamado;
+    const nid=await salvar('vistorias',null,{...v,tipo:'condutor',data:t,status:'enviada',contratoId:c?c.id:null,clienteId:c?c.clienteId:null,condutorId:mc?mc.id:null,condutorNome:mc?mc.nome:S.me.nome,feitaPeloCliente:true},'enviou vistoria');
+    await salvar('leituras',null,{veiculoId:v.veiculoId,km:+v.km,data:t,origem:'vistoria do condutor',status:'informada',horaServidor:true,suspeita:+v.km<kmAtual(G('veiculos',v.veiculoId)),foto:v.fPainel||null,origemId:nid},'registrou km');
+    if(abrir && (nAv || v.avarias)) await SCHEMA.chamados.save({tipo:'problema',veiculoId:v.veiculoId,prioridade:'media',status:'aberto',descricao:`[Vistoria] ${Object.keys(v.checklist||{}).join(', ')}${v.avarias?' · '+v.avarias:''}`,anexos:v.fotos||[],abertoPeloCliente:true,origemVistoria:nid},null,null);
+    return nid; }};
+const SIN_T=[['colisao','Colisão / batida'],['roubo','Roubo'],['furto','Furto'],['vidros','Vidros e para-brisa'],['terceiro','Dano a terceiro'],['incendio','Incêndio'],['alagamento','Alagamento'],['outro','Outro']];
+SCHEMA.p_sinistro={col:'chamados',titulo:'Aviso de sinistro ao seguro',fixo:1,fields:[{k:'veiculoId',t:'hidden'},
+  {k:'tipoSin',l:'O que aconteceu',t:'sel',opts:opt(SIN_T),req:1,def:'colisao'},{k:'dataHora',l:'Data e hora do ocorrido',t:'dt',req:1,defFn:agora},
+  {k:'local',l:'Local',req:1,full:1,hint:'Endereço, rodovia e km, ou ponto de referência.'},{k:'descricao',l:'Como aconteceu',t:'area',req:1,full:1},
+  {k:'feridos',l:'Houve feridos',t:'bool'},{k:'terceiros',l:'Dados do terceiro (nome, placa, seguradora, telefone)',t:'area',full:1},
+  {k:'bo',l:'Boletim de ocorrência',t:'file',accept:'image/*,application/pdf',full:1,hint:'Obrigatório para roubo e furto. Pode anexar depois.'},
+  {k:'anexos',l:'Fotos e vídeos',t:'files',accept:'image/*,video/*',full:1}],
+  async save(v){ return SCHEMA.chamados.save({...v,tipo:'sinistro',prioridade:'alta',status:'aberto',descricao:`[Seguro · ${lbl(SIN_T,v.tipoSin)}] ${v.descricao}${v.feridos?' · HOUVE FERIDOS':''}`,abertoPeloCliente:true},null,null); }};
+SCHEMA.p_documento={col:'chamados',titulo:'Enviar documento à F2',fixo:1,fields:[{k:'veiculoId',t:'hidden'},
+  {k:'tipoDoc',l:'Tipo',t:'sel',opts:opt([['nota','Nota fiscal ou recibo'],['laudo','Laudo ou orçamento de oficina'],['bo','Boletim de ocorrência'],['notificacao','Notificação de multa'],['outro','Outro']]),req:1},
+  {k:'descricao',l:'Descrição',req:1,full:1},{k:'anexos',l:'Arquivos',t:'files',accept:'image/*,application/pdf',full:1}],
+  async save(v){ if(!(v.anexos||[]).length) throw 'Anexe pelo menos um arquivo.'; return SCHEMA.chamados.save({...v,tipo:'documento',prioridade:'baixa',status:'aberto',descricao:`[${lbl([['nota','Nota fiscal'],['laudo','Laudo/orçamento'],['bo','B.O.'],['notificacao','Notificação de multa'],['outro','Documento']],v.tipoDoc)}] ${v.descricao}`,abertoPeloCliente:true},null,null); }};
+SCHEMA.p_meucadastro={col:'condutores',titulo:'Meu cadastro',fixo:1,fields:[{k:'telefone',l:'Telefone'},{k:'cnh',l:'Nº da CNH'},{k:'cnhValidade',l:'Validade da CNH',t:'date'},{k:'cnhArquivo',l:'Foto da CNH',t:'file',accept:'image/*,application/pdf',full:1}],
+  async save(v,id){ return salvar('condutores',id,v,'atualizou cadastro'); }};
+function seguroDoVeiculo(vid){ return L('documentos').filter(d=>d.veiculoId===vid&&d.tipo==='seguro').sort((a,b)=>(a.vencimento||'')<(b.vencimento||'')?1:-1)[0]||null; }
+function openSeguro(vid){
+  const s=seguroDoVeiculo(vid); const dlg=$('#dlg'); if(dlg.open) dlg.close();
+  dlg.innerHTML=`<div class="dbody"><div class="dh"><h2>Acionar seguro · ${esc(PL(vid))}</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc stack">
+    <div class="note b">Se houver feridos ou risco, ligue primeiro para 190 (Polícia) ou 192 (SAMU). Não assuma culpa no local.</div>
+    ${s?`<div class="card"><dl class="info"><div><dt>Seguradora</dt><dd>${esc(s.seguradora||'—')}</dd></div><div><dt>Apólice</dt><dd class="mono">${esc(s.apolice||'—')}</dd></div><div><dt>Assistência 24 h</dt><dd>${s.assistencia?`<a href="tel:${esc(String(s.assistencia).replace(/[^\d+]/g,''))}">${esc(s.assistencia)}</a>`:'—'}</dd></div><div><dt>Franquia</dt><dd>${money(s.franquia)}</dd></div><div><dt>Vigência até</dt><dd>${dbr(s.vencimento)}</dd></div></dl>${s.arquivo?`<div class="row" style="margin-top:8px">${arq(s.arquivo)}</div>`:''}</div>`:'<p class="muted" style="margin:0">A F2 ainda não cadastrou a apólice deste veículo. Avise a F2 pelo formulário abaixo.</p>'}
+    <p class="muted" style="margin:0">Pelo contrato, a franquia do seguro em sinistro é paga pelo cliente. A F2 recebe o aviso na hora e cuida do contato com a seguradora.</p>
+    <div class="row"><button class="btn pri" data-act="pform" data-k="p_sinistro" data-id="${esc(vid)}">Avisar a F2 do sinistro</button></div></div></div>`;
+  dlg.querySelector('[data-close]').onclick=()=>dlg.close(); dlg.showModal();
+}
+function escolherVeiculo(titulo){ return new Promise(res=>{
+  const mu=meuUsoAberto(); if(ehCondutor() && mu) return res(mu.veiculoId);
+  const vs=veicsCli(); if(vs.length===1) return res(vs[0].id); if(!vs.length){ toast('Nenhum veículo com contrato ativo.'); return res(null); }
+  const d=$('#ask'); let feito=false; const fim=v=>{ if(feito) return; feito=true; res(v); };
+  d.innerHTML=`<div class="dbody"><div class="dh"><h2>${esc(titulo||'Qual veículo?')}</h2><button type="button" class="btn ghost" id="askn">Fechar</button></div><div class="dc"><div class="qa">${vs.map(v=>`<button type="button" data-esc="${esc(v.id)}">${esc((v.placa||'').toUpperCase())}<small>${esc(v.marca)} ${esc(v.modelo)}</small></button>`).join('')}</div></div></div>`;
+  d.querySelectorAll('[data-esc]').forEach(b=>b.onclick=()=>{ fim(b.dataset.esc); d.close(); }); d.querySelector('#askn').onclick=()=>{ fim(null); d.close(); }; d.onclose=()=>fim(null); d.showModal(); }); }
+
+/* ---------- QR code do veículo ---------- */
+function urlQR(vid){ return location.origin + location.pathname.replace(/index\.html$/,'') + '?v=' + encodeURIComponent(vid); }
+let _qrLoad=null;
+function carregarQR(){ if(window.qrcode) return Promise.resolve(); if(!_qrLoad) _qrLoad=new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='qrcode.js'; s.onload=()=>res(); s.onerror=()=>{ _qrLoad=null; rej('Não foi possível carregar o gerador de QR code. Verifique a internet.'); }; document.head.appendChild(s); }); return _qrLoad; }
+async function openQR(vid){
+  await carregarQR(); const v=G('veiculos',vid); if(!v) return; const url=urlQR(vid);
+  const q=qrcode(0,'M'); q.addData(url); q.make(); const svg=q.createSvgTag({cellSize:8,margin:2,scalable:true,alt:'QR code de check-in do veículo '+(v.placa||'')});
+  const dlg=$('#dlg'); if(dlg.open) dlg.close();
+  dlg.innerHTML=`<div class="dbody"><div class="dh"><h2>QR code do veículo</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc stack">
+    <div class="qrcard" id="qrprint"><div class="brand" style="padding:0;justify-content:center"><div class="brand-mark">F2</div><div style="text-align:left"><b>F2 Conect</b><small>F2 Carloc</small></div></div>
+      <div style="display:flex;justify-content:center">${placaHTML(v,1)}</div><div class="qrsvg">${svg}</div>
+      <b style="font-size:17px">Check-in e checkout</b><span>Aponte a câmera do celular para este código.</span><small class="muted mono" style="overflow-wrap:anywhere">${esc(url)}</small></div>
+    <p class="muted" style="margin:0">Imprima, plastifique e cole em lugar visível dentro do carro (ex.: para-sol ou porta-luvas). Quem ainda não tem conta cria pelo próprio QR e o gestor libera.</p></div>
+    <div class="df"><button type="button" class="btn" data-copiar>Copiar link</button><button type="button" class="btn pri" data-imprimir>Imprimir</button></div></div>`;
+  dlg.querySelector('[data-close]').onclick=()=>dlg.close();
+  dlg.querySelector('[data-imprimir]').onclick=()=>window.print();
+  dlg.querySelector('[data-copiar]').onclick=async()=>{ try{ await navigator.clipboard.writeText(url); toast('Link copiado.'); }catch(e){ toast(url); } };
+  dlg.showModal();
+}
+const QR_KEY='f2_qr';
+function qrGuardar(v){ try{ localStorage.setItem(QR_KEY,JSON.stringify({v,ts:Date.now()})); }catch(e){} }
+function qrPendente(){ try{ const o=JSON.parse(localStorage.getItem(QR_KEY)||'null'); return o && Date.now()-o.ts<6*36e5 ? o.v : null; }catch(e){ return null; } }
+function qrLimpar(){ try{ localStorage.removeItem(QR_KEY); }catch(e){} }
+(function(){ try{ const v=new URLSearchParams(location.search).get('v'); if(v){ qrGuardar(v); history.replaceState(null,'',location.pathname+location.hash); } }catch(e){} })();
+function tratarQR(){
+  const v=qrPendente(); if(!v) return; qrLimpar();
+  if(ehEquipe()){ if(G('veiculos',v)) go('veiculo',v,'uso'); return; }
+  if(!ehCliente()) return;
+  if(!idsVeic().has(v)){ toast('Este veículo não está com a sua empresa agora.'); return; }
+  S.p.vid=v; S.p.vtab='resumo'; render();
+  const u=usoAberto(v); if(u && (ehGestor()||u.condutorId===S.me.condutorId)) openCheckout(v); else openCheckin(v);
+}
+
+/* ---------- check-in e checkout ---------- */
+function openCheckin(vid){
+  const v=G('veiculos',vid); if(!v) return toast('Veículo não encontrado.'); const c=contratoDoVeiculo(vid);
+  if(['manutencao','vendido'].includes(statusVeiculo(v))) return toast(`Este veículo está ${VSTATUS[statusVeiculo(v)].toLowerCase()} e não aceita check-in.`);
+  let conds=c?L('condutores').filter(d=>d.clienteId===c.clienteId && d.status!=='bloqueado'):[];
+  const fixo=ehCondutor(); let aviso='';
+  if(fixo){ const mc=meuCondutor(); if(!mc || mc.status!=='aprovado') return toast('Seu cadastro de condutor precisa estar aprovado pelo gestor para fazer check-in.'); conds=[mc];
+    if(mc.cnhValidade && mc.cnhValidade<hoje()) aviso='<div class="note b" style="margin-bottom:12px">Sua CNH consta como vencida no cadastro. Atualize em Meu cadastro.</div>'; }
+  const ab=usoAberto(vid); const geo=pegarLocal(); const dlg=$('#dlg'); if(dlg.open) dlg.close();
+  dlg.innerHTML=`<form id="frm" novalidate><div class="dh"><h2>Check-in · ${esc((v.placa||'').toUpperCase())}</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc">${aviso}
+    ${ab?`<div class="note" style="margin-bottom:12px">Este veículo está com <b>${esc(nomeCondutor(ab))}</b> desde ${dtbr(ab.inicio)}. Ao confirmar, esse uso será encerrado como <b>encerrado forçado</b> e o gestor é avisado.</div>`:''}
+    <div class="fgrid">
+      <div class="fld full"><label for="ci_c">Condutor <span class="req">*</span></label><select id="ci_c">${fixo?'':'<option value="">Selecione…</option>'}${conds.map(d=>`<option value="${esc(d.id)}"${fixo?' selected':''}>${esc(d.nome)}${d.status==='pendente'?' (pendente)':''}</option>`).join('')}${fixo?'':'<option value="__outro">Outro (digitar nome)</option>'}</select>${c?'':'<span class="hint">Veículo sem contrato ativo.</span>'}</div>
+      <div class="fld full" id="ci_on" hidden><label for="ci_n">Nome do condutor</label><input id="ci_n"></div>
+      <div class="fld"><label for="ci_km">Km do odômetro agora <span class="req">*</span></label><input id="ci_km" type="number" inputmode="numeric" placeholder="${esc(String(kmAtual(v)))}"><span class="hint">Último registrado: ${kmf(kmAtual(v))}</span></div>
+      <div class="fld"><label for="ci_fo">Foto do odômetro</label><input id="ci_fo" type="file" accept="image/*"><span class="hint">Recomendada.</span></div>
+      <div class="fld full"><label for="ci_o">Observação</label><textarea id="ci_o" placeholder="Ex.: risco na porta traseira, luz de óleo acesa"></textarea></div>
+      <div class="fld full"><label for="ci_fs">Fotos do carro (opcional)</label><input id="ci_fs" type="file" accept="image/*" multiple></div>
+      <div class="fld chk full"><input id="ci_ch" type="checkbox"><label for="ci_ch">Abrir chamado para a F2 com esta observação</label></div>
+      <div class="fld chk full"><input id="ci_lc" type="checkbox" checked><label for="ci_lc">Registrar minha localização neste momento</label></div>
+      <p class="hint full" style="margin:0">Data e hora são do servidor. A localização é registrada só agora, no check-in (LGPD).</p>
+    </div><p class="hint" id="ferr" hidden style="color:var(--danger)"></p></div>
+    <div class="df"><button type="button" class="btn" data-close>Cancelar</button><button type="submit" class="btn pri" id="fsub">Confirmar check-in</button></div></form>`;
+  const f=$('#frm'); f.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dlg.close());
+  f.querySelector('#ci_c').onchange=e=>{ f.querySelector('#ci_on').hidden = e.target.value!=='__outro'; };
+  f.onsubmit=async e=>{ e.preventDefault(); const err=$('#ferr'); err.hidden=true;
+    const sel=f.querySelector('#ci_c').value, nome=f.querySelector('#ci_n').value.trim(), km=+f.querySelector('#ci_km').value, obs=f.querySelector('#ci_o').value.trim(), ch=f.querySelector('#ci_ch').checked, comLoc=f.querySelector('#ci_lc').checked;
+    if(!sel || (sel==='__outro'&&!nome) || !km){ err.textContent='Informe o condutor e o km do odômetro.'; err.hidden=false; return; }
+    const sub=$('#fsub'); sub.disabled=true;
+    try{
+      const cid=c?c.clienteId:null;
+      const fo=await enviarArqs(f.querySelector('#ci_fo'),cid,sub,'foto do odômetro'); const fs=await enviarArqs(f.querySelector('#ci_fs'),cid,sub,'foto');
+      sub.textContent='Registrando…'; const loc = comLoc ? await geo : null;
+      const abertos=L('usos').filter(u=>u.veiculoId===vid && u.status==='em_uso');
+      const t=agora();
+      for(const d of abertos) await salvar('usos',d.id,{status:'encerrado_forcado',fim:t,encerradoPor:S.uid},'encerrou uso (forçado)');
+      const ultFim=L('usos').filter(u=>u.veiculoId===vid && u.kmFinal!=null).sort((a,b)=>a.fim<b.fim?1:-1)[0];
+      const refKm = ultFim? +ultFim.kmFinal : null; const gap = refKm!=null && km>refKm ? km-refKm : 0;
+      const suspeita = km<kmAtual(v);
+      const uid=await salvar('usos',null,{veiculoId:vid,contratoId:c?c.id:null,clienteId:cid,condutorId:sel==='__outro'?null:sel,condutorNome:sel==='__outro'?nome:(G('condutores',sel)||{}).nome,inicio:t,kmInicial:km,obsInicio:obs,status:'em_uso',kmSemCondutor:gap,gapResolvido:false,retroativo:false,fotoOdoIni:fo[0]?fo[0].id:null,fotosIni:fs,localIni:loc,forcouDe:abertos.map(a=>a.id)},'fez check-in');
+      await salvar('leituras',null,{veiculoId:vid,km,data:t,origem:'check-in',status:'informada',suspeita,horaServidor:true,foto:fo[0]?fo[0].id:null,origemId:uid},'registrou km');
+      if(ch && obs) await SCHEMA.chamados.save({tipo:'problema',veiculoId:vid,prioridade:'media',status:'aberto',descricao:obs,origemUso:uid,anexos:fs,abertoPeloCliente:ehCliente()},null,null);
+      dlg.close(); toast(gap>0?`Check-in feito. ${kmf(gap)} rodados sem condutor registrado: o gestor foi avisado.`:suspeita?'Check-in feito. Km menor que o último registrado: leitura marcada para conferência.':'Check-in feito. Boa viagem!');
+    }catch(ex){ err.textContent=errMsg(ex); err.hidden=false; sub.disabled=false; sub.textContent='Confirmar check-in'; }
+  };
+  dlg.showModal();
+}
+function openCheckout(vid){
+  const u=usoAberto(vid); const v=G('veiculos',vid); if(!u) return toast('Não há check-in aberto neste veículo.');
+  const geo=pegarLocal(); const dlg=$('#dlg'); if(dlg.open) dlg.close();
+  dlg.innerHTML=`<form id="frm" novalidate><div class="dh"><h2>Checkout · ${esc((v.placa||'').toUpperCase())}</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc"><div class="fgrid">
+    <div class="fld full"><label>Uso</label><input value="${esc(nomeCondutor(u))} · desde ${dtbr(u.inicio)} · ${kmf(u.kmInicial)}" disabled></div>
+    <div class="fld"><label for="co_km">Km do odômetro agora <span class="req">*</span></label><input id="co_km" type="number" inputmode="numeric" placeholder="${esc(String(u.kmInicial))}"><span class="hint">No check-in: ${kmf(u.kmInicial)}</span></div>
+    <div class="fld"><label for="co_fo">Foto do odômetro</label><input id="co_fo" type="file" accept="image/*"><span class="hint">Recomendada.</span></div>
+    <div class="fld"><label for="co_cb">Nível de combustível</label><select id="co_cb"><option value=""></option>${COMB_NIVEL.map(o=>`<option value="${o.v}">${o.l}</option>`).join('')}</select></div>
+    <div class="fld"><label for="co_fs">Fotos do carro (opcional)</label><input id="co_fs" type="file" accept="image/*" multiple></div>
+    <div class="fld full"><label for="co_o">Observação</label><textarea id="co_o" placeholder="Ex.: pneu dianteiro murcho, barulho ao frear"></textarea></div>
+    <div class="fld chk full"><input id="co_ch" type="checkbox"><label for="co_ch">Abrir chamado para a F2 com esta observação</label></div>
+    <div class="fld chk full"><input id="co_lc" type="checkbox" checked><label for="co_lc">Registrar minha localização neste momento</label></div></div><p class="hint" id="ferr" hidden style="color:var(--danger)"></p></div>
+    <div class="df"><button type="button" class="btn" data-close>Cancelar</button><button type="submit" class="btn pri" id="fsub">Confirmar checkout</button></div></form>`;
+  const f=$('#frm'); f.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dlg.close());
+  f.onsubmit=async e=>{ e.preventDefault(); const err=$('#ferr'); err.hidden=true; const km=+f.querySelector('#co_km').value; const obs=f.querySelector('#co_o').value.trim();
+    if(!km || km<+u.kmInicial){ err.textContent='Informe o km do odômetro. Ele não pode ser menor que o do check-in ('+kmf(u.kmInicial)+').'; err.hidden=false; return; }
+    const sub=$('#fsub'); sub.disabled=true;
+    try{ const cid=u.clienteId||null; const fo=await enviarArqs(f.querySelector('#co_fo'),cid,sub,'foto do odômetro'); const fs=await enviarArqs(f.querySelector('#co_fs'),cid,sub,'foto');
+      sub.textContent='Registrando…'; const loc=f.querySelector('#co_lc').checked ? await geo : null;
+      const t=agora(); await salvar('usos',u.id,{status:'encerrado',fim:t,kmFinal:km,obsFim:obs,fotoOdoFim:fo[0]?fo[0].id:null,fotosFim:fs,localFim:loc,combustivelFim:f.querySelector('#co_cb').value||null,encerradoPor:S.uid},'fez checkout');
+      await salvar('leituras',null,{veiculoId:vid,km,data:t,origem:'checkout',status:'informada',horaServidor:true,foto:fo[0]?fo[0].id:null,origemId:u.id+'_fim'},'registrou km');
+      if(f.querySelector('#co_ch').checked && obs) await SCHEMA.chamados.save({tipo:'problema',veiculoId:vid,prioridade:'media',status:'aberto',descricao:obs,origemUso:u.id,anexos:fs,abertoPeloCliente:ehCliente()},null,null);
+      dlg.close(); toast(`Checkout feito · ${kmf(km-(+u.kmInicial))} rodados.`); }catch(ex){ err.textContent=errMsg(ex); err.hidden=false; sub.disabled=false; sub.textContent='Confirmar checkout'; } };
+  dlg.showModal();
+}
+
+/* ---------- avisos do portal ---------- */
 function pAlertas(){
   const A=[]; const P=cfg(); const h=hoje(); const gestor=ehGestor(); const add=(sev,t,d,acao)=>A.push({sev,titulo:t,detalhe:d,acao});
+  const mu=meuUsoAberto();
   for(const c of contratosAtivosCli()){ const v=G('veiculos',c.veiculoId); if(!v) continue; const pl=(v.placa||'').toUpperCase();
+    const meuCarro = mu && mu.veiculoId===v.id;
     if(gestor){ const k=consumo(c);
       if(k && !k.semLimite){ const lim=[...P.alertasKm].sort((a,b)=>b-a).find(t=>k.pct>=t);
         if(lim!=null || k.excProj>0) add(k.pct>=100?'b':'w',`${pl}: ${nf(k.pct)}% da franquia de km usada`,`Saldo ${kmf(k.saldo)}${k.excProj>0?' · previsão de excedente '+kmf(k.excProj)+' ('+money(k.custoExcProj)+', estimativa)':''}`,(c.pacotesOferta||[]).length?{act:'ppacote',id:c.id,lbl:'Contratar mais km'}:null); }
       if(c.fim){ const d=diff(h,c.fim); if(d<=P.diasAvisoVenc) add(d<=7?'b':'w',`Contrato de ${pl} vence em ${d} dia(s)`,`Término em ${dbr(c.fim)}. Fale com a F2 sobre a renovação.`); } }
     const u=usoAberto(c.veiculoId);
     if(u && (gestor || u.condutorId===S.me.condutorId)){ const hrs=(new Date(agora())-new Date(u.inicio))/36e5; if(hrs>P.horasCheckin) add('w',`Check-in aberto há ${Math.floor(hrs)} h em ${pl}`,`${nomeCondutor(u)} · lembre de fazer o checkout`,{act:'checkout',id:c.veiculoId,lbl:'Fazer checkout'}); }
-    if(gestor){ const km=kmAtual(v);
-      for(const cat of PREVENTIVAS){ const m=L('manutencoes').filter(m=>m.veiculoId===v.id&&m.categoria===cat&&m.status!=='cancelada').sort((a,b)=>a.data<b.data?1:-1)[0]; if(!m) continue;
-        if((m.proximaData&&m.proximaData<h)||(m.proximaKm&&km>=+m.proximaKm)) add('w',`${catLbl(cat)} vencida em ${pl}`,'Agende o serviço e registre o comprovante aqui no portal.',{act:'pform',k:'p_preventiva',id:v.id,lbl:'Registrar serviço'}); }
-      for(const x of L('vistorias').filter(x=>x.veiculoId===v.id&&x.status==='aguardando_aceite')) add('i',`Vistoria de ${pl} aguardando seu aceite`,`${VIST_T[x.tipo]||''} em ${dtbr(x.data)}`,{act:'pv',id:v.id,lbl:'Ver vistoria'}); }
+    if(gestor || meuCarro){ for(const p of preventivas(v).filter(p=>p.st!=='ok')) add(p.st==='vencida'?'w':'i',`${p.nome} ${p.st==='vencida'?'vencida':'chegando'} em ${pl}`,`${p.pk!=null?(p.faltaKm>0?'Faltam '+kmf(p.faltaKm):'Passou '+kmf(-p.faltaKm)):''}${p.pd?' · prazo '+dbr(p.pd):''}. Agende e registre o comprovante.`,{act:'pform',k:'p_preventiva',id:v.id,lbl:'Registrar serviço'}); }
+    if(gestor){ for(const x of LC('vistorias').filter(x=>x.veiculoId===v.id&&x.status==='aguardando_aceite')) add('i',`Vistoria de ${pl} aguardando seu aceite`,`${VIST_T[x.tipo]||''} em ${dtbr(x.data)}`,{act:'pv',id:v.id,lbl:'Ver vistoria'}); }
   }
   if(gestor){
-    for(const f of L('faturas').filter(f=>f.clienteId===S.me.clienteId&&f.status==='aberta')) add(f.vencimento<h?'b':'i',`Fatura ${mesbr(f.competencia)} ${f.vencimento<h?'em atraso':'em aberto'}`,`${money(f.total)} · vence ${dbr(f.vencimento)}`,{act:'ptab',tab:'faturas',lbl:'Ver fatura'});
-    for(const m of L('multas').filter(m=>m.statusIndicacao==='pendente'&&!m.condutorConfirmado)) add('w','Multa aguardando indicação do condutor',`${dtbr(m.dataHora)} · ${((G('veiculos',m.veiculoId)||{}).placa||'').toUpperCase()}${m.prazoIndicacao?' · prazo '+dbr(m.prazoIndicacao):''}`,{act:'ptab',tab:'multas',lbl:'Indicar condutor'});
-    for(const d of L('condutores').filter(d=>d.clienteId===S.me.clienteId&&d.cnhValidade&&diff(h,d.cnhValidade)<=P.diasAvisoVenc)) add('w',`CNH de ${d.nome} ${d.cnhValidade<h?'vencida':'vence em '+diff(h,d.cnhValidade)+' dias'}`,'Atualize o cadastro do condutor.',{act:'ptab',tab:'condutores',lbl:'Condutores'});
+    for(const u of LC('usos').filter(u=>u.kmSemCondutor>0&&!u.gapResolvido)) add('w',`${PL(u.veiculoId)}: ${kmf(u.kmSemCondutor)} rodados sem condutor registrado`,`Detectado no check-in de ${dtbr(u.inicio)}. Se alguém esqueceu, registre o uso esquecido.`,{act:'retro',id:u.veiculoId,lbl:'Registrar uso esquecido'});
+    for(const u of LC('usos').filter(u=>u.status==='encerrado_forcado'&&u.fim&&diff(u.fim,h)<=2)) add('i',`Troca de condutor em ${PL(u.veiculoId)}`,`O uso de ${nomeCondutor(u)} foi encerrado por outro check-in em ${dtbr(u.fim)}.`);
+    for(const f of LC('faturas').filter(f=>f.status==='aberta')) add(f.vencimento<h?'b':'i',`Fatura ${mesbr(f.competencia)} ${f.vencimento<h?'em atraso':'em aberto'}`,`${money(f.total)} · vence ${dbr(f.vencimento)}`,{act:'ptab',tab:'faturas',lbl:'Ver fatura'});
+    for(const m of LC('multas').filter(m=>m.statusIndicacao==='pendente'&&!m.condutorConfirmado)) add('w','Multa aguardando indicação do condutor',`${dtbr(m.dataHora)} · ${PL(m.veiculoId)}${m.prazoIndicacao?' · prazo '+dbr(m.prazoIndicacao):''}`,{act:'ptab',tab:'multas',lbl:'Indicar condutor'});
+    for(const d of LC('condutores').filter(d=>d.cnhValidade&&diff(h,d.cnhValidade)<=P.diasAvisoVenc)) add('w',`CNH de ${d.nome} ${d.cnhValidade<h?'vencida':'vence em '+diff(h,d.cnhValidade)+' dias'}`,'Atualize o cadastro do condutor.',{act:'ptab',tab:'condutores',lbl:'Condutores'});
+    const pend=LC('condutores').filter(d=>d.status==='pendente').length + (S.perfis||[]).filter(p=>p.cliente_id===S.me.clienteId&&p.perfil==='condutor'&&!p.ativo&&!LC('condutores').some(d=>d.id===p.condutor_id&&d.status==='pendente')).length;
+    if(pend) add('w',`${pend} motorista(s) aguardando sua liberação`,'Confira os dados e libere o acesso ao app.',{act:'ptab',tab:'condutores',lbl:'Ver motoristas'});
     const cids=new Set(contratosAtivosCli().map(c=>c.id));
-    for(const k of L('pacotes').filter(k=>cids.has(k.contratoId)&&['aprovado','faturado'].includes(k.status)&&k.aprovadoEm&&diff(k.aprovadoEm,h)<=7)) add('i',`Pacote de ${nf(k.km)} km aprovado`,'O saldo da franquia já foi atualizado.');
-    for(const k of L('pacotes').filter(k=>cids.has(k.contratoId)&&k.status==='recusado'&&diff(locISO(k.atualizadoEm)||h,h)<=7)) add('w',`Pedido de ${nf(k.km)} km recusado`,'Fale com a F2 para entender o motivo.');
-  }
-  const meus=L('chamados').filter(c=>gestor?c.clienteId===S.me.clienteId:c.criadoPor===S.uid);
-  for(const c of meus){ const hs=c.historico||[]; const ult=hs[hs.length-1]; if(ult && hs.length>1 && diff(locISO(ult.ts),h)<=3) add('i',`Chamado #${c.numero}: ${lbl(CH_ST,c.status)}`,(c.descricao||'').slice(0,90),{act:'ptab',tab:'chamados',lbl:'Ver chamado'}); }
-  for(const r of L('reembolsos').filter(r=>(gestor||r.criadoPor===S.uid)&&['aprovado','pago','recusado'].includes(r.status)&&diff(locISO(r.atualizadoEm)||h,h)<=7)) add(r.status==='recusado'?'w':'i',`Reembolso ${lbl(RB_ST,r.status).toLowerCase()}`,`${money(r.valor)} · ${r.motivo||''}`);
+    for(const k of LC('pacotes').filter(k=>cids.has(k.contratoId)&&['aprovado','faturado'].includes(k.status)&&k.aprovadoEm&&diff(k.aprovadoEm,h)<=7)) add('i',`Pacote de ${nf(k.km)} km aprovado`,'O saldo da franquia já foi atualizado.');
+    for(const k of LC('pacotes').filter(k=>cids.has(k.contratoId)&&k.status==='recusado'&&diff(locISO(k.atualizadoEm)||h,h)<=7)) add('w',`Pedido de ${nf(k.km)} km recusado`,'Fale com a F2 para entender o motivo.');
+  } else { const mc=meuCondutor(); if(mc&&mc.cnhValidade&&diff(h,mc.cnhValidade)<=P.diasAvisoVenc) add('w',`Sua CNH ${mc.cnhValidade<h?'está vencida':'vence em '+diff(h,mc.cnhValidade)+' dias'}`,'Atualize em Meu cadastro.',{act:'ptab',tab:'cadastro',lbl:'Meu cadastro'}); }
+  const meus=LC('chamados').filter(c=>gestor||ehMeu(c));
+  for(const c of meus){ const hs=c.historico||[]; const ult=hs[hs.length-1]; if(ult && hs.length>1 && diff(locISO(ult.ts),h)<=3) add('i',`Chamado #${c.numero}: ${lbl(CH_ST,c.status)}`,(c.respostaF2||c.descricao||'').slice(0,90),{act:'ptab',tab:gestor?'chamados':'registros',lbl:'Ver chamado'}); }
+  for(const r of LC('reembolsos').filter(r=>(gestor||ehMeu(r))&&['aprovado','pago','recusado'].includes(r.status)&&diff(locISO(r.atualizadoEm)||h,h)<=7)) add(r.status==='recusado'?'w':'i',`Reembolso ${lbl(RB_ST,r.status).toLowerCase()}`,`${money(r.valor)} · ${r.motivo||''}`);
   const o={b:0,w:1,i:2}; return A.sort((a,b)=>o[a.sev]-o[b.sev]);
 }
+function avisosHTML(al){ return al.length?`<section class="card" style="padding:0"><div style="padding:14px 14px 6px"><h3>Avisos (${al.length})</h3></div><div class="alerts">${al.map(a=>`<div class="alert" style="cursor:default"><span class="sev ${a.sev}"></span><div><b>${esc(a.titulo)}</b><small>${esc(a.detalhe)}</small></div>${a.acao?`<button class="btn sm${a.sev!=='i'?' pri':''}" data-act="${a.acao.act}" data-id="${esc(a.acao.id||'')}" data-k="${esc(a.acao.k||'')}" data-tab="${esc(a.acao.tab||'')}">${esc(a.acao.lbl)}</button>`:'<span></span>'}</div>`).join('')}</div></section>`:'<div class="note i">Nenhum aviso no momento.</div>'; }
+
+/* ---------- estrutura do portal ---------- */
+const P_TABS_G=[['inicio','Início'],['contratos','Contratos e km'],['uso','Uso'],['abast','Abastecimento'],['manut','Manutenção'],['chamados','Chamados'],['faturas','Faturas'],['multas','Multas'],['condutores','Motoristas']];
+const P_TABS_C=[['inicio','Início'],['registros','Meus registros'],['cadastro','Meu cadastro']];
 function renderPortal(){
-  const me=S.me, gestor=ehGestor(), cli=G('clientes',me.clienteId);
-  const tabs=gestor?[['inicio','Início'],['chamados','Chamados'],['faturas','Faturas'],['multas','Multas'],['condutores','Condutores']]:[['inicio','Início'],['chamados','Meus chamados']];
+  const me=S.me, gestor=ehGestor(), cli=G('clientes',me.clienteId); S.p.f=S.p.f||{};
+  const tabs=gestor?P_TABS_G:P_TABS_C; if(!tabs.some(t=>t[0]===S.p.tab)) S.p.tab='inicio';
   let h;
   if(S.p.vid && idsVeic().has(S.p.vid)) h=pVeiculo(S.p.vid);
-  else { S.p.vid=null; h=({inicio:pInicio,chamados:pChamados,faturas:pFaturas,multas:pMultas,condutores:pCondutores}[S.p.tab]||pInicio)(); }
+  else { S.p.vid=null; h=({inicio:gestor?pInicioG:pInicioC,contratos:pContratos,uso:pUso,abast:pAbast,manut:pManut,chamados:pChamados,faturas:pFaturas,multas:pMultas,condutores:pCondutores,registros:pRegistros,cadastro:pCadastro}[S.p.tab]||pInicioC)(); }
   const sy=window.scrollY;
-  $('#main').innerHTML=`<header class="ptop"><div class="brand" style="padding:0"><div class="brand-mark">F2</div><div><b>F2 Conect</b><small>${esc(cli?cli.nome:'Cliente')}</small></div></div><div class="row"><span class="sync"></span><span class="muted" style="font-size:13px">${esc(me.nome)}</span><button class="btn sm" data-act="sair">Sair</button></div></header>
+  $('#main').innerHTML=`${S.preview?`<div class="banner row" style="justify-content:space-between"><span>Você está vendo o app como <b>${esc(lbl(PERFIS,me.perfil))}</b> de <b>${esc(cli?cli.nome:'')}</b>${me.perfil==='condutor'?' ('+esc(me.nome)+')':''}. Ações ficam desativadas.</span><button class="btn sm pri" data-act="sairVerComo">Voltar ao painel F2</button></div>`:''}
+    <header class="ptop"><div class="brand" style="padding:0"><div class="brand-mark">F2</div><div><b>F2 Conect</b><small>${esc(cli?cli.nome:'Cliente')}</small></div></div><div class="row"><span class="sync"></span><span class="muted" style="font-size:13px">${esc(me.nome)}</span>${S.preview?'':'<button class="btn sm" data-act="sair">Sair</button>'}</div></header>
     <nav class="ptabs">${tabs.map(([k,l])=>`<button data-act="ptab" data-tab="${k}" aria-selected="${!S.p.vid&&S.p.tab===k}">${l}</button>`).join('')}</nav>${h}`;
   setSync(Supa.estado||'ok'); window.scrollTo(0,sy);
 }
-function pInicio(){
-  const gestor=ehGestor(); const al=pAlertas(); const cs=contratosAtivosCli(); const mc=meuCondutor();
-  const aviso=(!gestor && mc && mc.status!=='aprovado')?`<div class="note b">Seu cadastro de condutor está ${esc(mc.status)}. Peça ao gestor da sua empresa para aprovar.</div>`:'';
-  return `<h1>Olá, ${esc((S.me.nome||'').split(' ')[0])}</h1><p class="sub">${gestor?'Gestor da frota':'Condutor'} · ${dbr(hoje())}</p><div class="stack" style="margin-top:14px">${aviso}
-  ${al.length?`<section class="card" style="padding:0"><div style="padding:14px 14px 6px"><h3>Avisos (${al.length})</h3></div><div class="alerts">${al.map(a=>`<div class="alert" style="cursor:default"><span class="sev ${a.sev}"></span><div><b>${esc(a.titulo)}</b><small>${esc(a.detalhe)}</small></div>${a.acao?`<button class="btn sm${a.sev!=='i'?' pri':''}" data-act="${a.acao.act}" data-id="${esc(a.acao.id||'')}" data-k="${esc(a.acao.k||'')}" data-tab="${esc(a.acao.tab||'')}">${esc(a.acao.lbl)}</button>`:'<span></span>'}</div>`).join('')}</div></section>`:'<div class="note i">Nenhum aviso no momento.</div>'}
-  <section><h3>${cs.length===1?'Veículo':'Veículos'} (${cs.length})</h3>${cs.length?`<div class="vgrid">${cs.map(pCard).join('')}</div>`:'<div class="tw"><div class="empty">Nenhum veículo com contrato ativo.</div></div>'}</section></div>`;
+function qaBtn(act,lbl,sub,extra,cls){ return `<button class="${cls||''}" data-act="${act}" ${extra||''}>${lbl}<small>${sub}</small></button>`; }
+function acoesVeiculo(vid){
+  const gestor=ehGestor(); const u=usoAberto(vid); const meu=u&&u.condutorId===S.me.condutorId; const c=contratoDoVeiculo(vid); const d=`data-id="${vid}"`; const qa=[];
+  qa.push(u&&(gestor||meu)?qaBtn('checkout','Checkout','Encerrar o uso',d,'pri'):qaBtn('checkin','Check-in',u?'Assumir o carro agora':'Pegar o carro agora',d,'pri'));
+  qa.push(qaBtn('pform','Abastecimento','Litros, valor e nota',d+' data-k="p_abastecimento"'));
+  qa.push(qaBtn('pform','Informar km','Com foto do odômetro',d+' data-k="p_km"'));
+  qa.push(qaBtn('pform','Vistoria com fotos','Frente, traseira, laterais',d+' data-k="p_vistoria"'));
+  qa.push(qaBtn('pform','Solicitar manutenção','Pedir autorização à F2',d+' data-k="p_manut"'));
+  qa.push(qaBtn('pform','Informar problema','Barulho, luz no painel…',d+' data-k="p_problema"'));
+  qa.push(qaBtn('pform','Registrar serviço feito','Óleo, revisão, alinhamento',d+' data-k="p_preventiva"'));
+  qa.push(qaBtn('emerg','Emergência','Pane, guincho, bateria…',d,'sos'));
+  qa.push(qaBtn('seguro','Acionar seguro','Batida, roubo, vidros',d,'sos'));
+  qa.push(qaBtn('pform','Pedir reembolso','Com nota ou recibo',d+' data-k="p_reembolso"'));
+  qa.push(qaBtn('pform','Enviar documento','Nota, laudo, B.O.',d+' data-k="p_documento"'));
+  if(gestor){ qa.push(qaBtn('retro','Registrar uso esquecido','Quem dirigiu, com justificativa',d));
+    if(c&&c.kmContratado) qa.push(qaBtn('ppacote','Contratar mais km','Pacotes do contrato',`data-id="${c.id}"`));
+    if(c&&c.pdf) qa.push(`<button data-file="${esc(c.pdf)}">Contrato<small>PDF assinado</small></button>`);
+    qa.push(qaBtn('qr','QR code do carro','Imprimir para o check-in',d)); }
+  return `<div class="qa">${qa.join('')}</div>`;
+}
+function kpi(t,v,s){ return `<div class="kpi"><span>${t}</span><b>${v}</b>${s?`<small>${s}</small>`:''}</div>`; }
+function pInicioG(){
+  const al=pAlertas(); const cs=contratosAtivosCli(); const vs=cs.map(c=>G('veiculos',c.veiculoId)).filter(Boolean); const h=hoje(); const m=mesAtual(); const ini=m+'-01', fim=isoD(new Date(+m.slice(0,4),+m.slice(5,7),0));
+  const emUso=vs.filter(v=>usoAberto(v.id)).length; const kmMes=vs.reduce((s,v)=>s+kmNoPeriodo(v.id,ini,fim),0);
+  const ab=LC('abastecimentos').filter(a=>(a.data||'').slice(0,7)===m); const gasto=ab.reduce((s,a)=>s+(+a.valor||0),0), lit=ab.reduce((s,a)=>s+(+a.litros||0),0);
+  const chs=LC('chamados').filter(c=>!['resolvido','encerrado'].includes(c.status)).length;
+  const fa=LC('faturas').filter(f=>f.status==='aberta').sort((a,b)=>a.vencimento<b.vencimento?-1:1)[0];
+  const prevs=vs.reduce((s,v)=>s+preventivas(v).filter(p=>p.st!=='ok').length,0);
+  return `<h1>Olá, ${esc((S.me.nome||'').split(' ')[0])}</h1><p class="sub">Gestor da frota · ${dbr(h)}</p><div class="stack" style="margin-top:14px">
+  <div class="kpis">${kpi('Veículos',vs.length,`${emUso} em uso agora`)}${kpi('Km no mês',nf(kmMes),mesbr(m))}${kpi('Combustível no mês',money(gasto),lit?nf(lit,1)+' litros':'Sem registros')}${kpi('Chamados abertos',chs,'')}${kpi('Próxima fatura',fa?money(fa.total):'—',fa?'vence '+dbr(fa.vencimento):'Nenhuma em aberto')}${kpi('Preventivas',prevs?prevs+' a fazer':'Em dia','revisão, óleo, alinhamento')}</div>
+  ${avisosHTML(al)}
+  <section><h3>Frota (${vs.length})</h3>${cs.length?`<div class="vgrid">${cs.map(pCard).join('')}</div>`:'<div class="tw"><div class="empty">Nenhum veículo com contrato ativo.</div></div>'}</section></div>`;
+}
+function pInicioC(){
+  const al=pAlertas(); const mc=meuCondutor(); const mu=meuUsoAberto();
+  const aviso=(mc && mc.status!=='aprovado')?`<div class="note b">Seu cadastro de motorista está ${esc(mc.status)}. Peça ao gestor da sua empresa para liberar.</div>`:'';
+  let corpo='';
+  if(mu){ const v=G('veiculos',mu.veiculoId);
+    corpo=`<section class="card stack" style="border-color:var(--accent)"><div class="row" style="justify-content:space-between">${placaHTML(v,1)}<span class="pill p-info">Com você</span></div><div><b style="font-size:18px">${esc(v.marca)} ${esc(v.modelo)}</b><br><span class="muted">Desde ${dtbr(mu.inicio)} · saiu com ${kmf(mu.kmInicial)}</span></div>${acoesVeiculo(v.id)}</section>${prevHTML(v,true)}`;
+  } else { const vs=veicsCli();
+    corpo=`<section><h3>Escolha o carro para o check-in</h3><p class="muted" style="margin:0 0 10px">Dica: aponte a câmera do celular para o QR code colado no carro.</p>${vs.length?`<div class="vgrid">${vs.map(v=>{ const u=usoAberto(v.id); const bloq=['manutencao','vendido'].includes(statusVeiculo(v));
+      return `<div class="card stack" style="gap:10px"><div class="row" style="justify-content:space-between">${placaHTML(v)}${u?'<span class="pill p-info">Em uso</span>':pillCli(v)}</div><div><b>${esc(v.marca)} ${esc(v.modelo)}</b><br><small class="muted">${u?'Com '+esc(nomeCondutor(u))+' desde '+dtbr(u.inicio):'Livre · '+kmf(kmAtual(v))}</small></div>
+      <div class="row">${bloq?'<span class="muted">Indisponível</span>':B(u?'Assumir o carro':'Fazer check-in','checkin','data-id="'+v.id+'"',!u)}${B('Abrir','pv','data-id="'+v.id+'"')}</div></div>`; }).join('')}</div>`:'<div class="tw"><div class="empty">Nenhum veículo disponível para sua empresa.</div></div>'}</section>`; }
+  return `<h1>Olá, ${esc((S.me.nome||'').split(' ')[0])}</h1><p class="sub">Motorista · ${dbr(hoje())}</p><div class="stack" style="margin-top:14px">${aviso}${corpo}${avisosHTML(al)}</div>`;
 }
 function pCard(c){
-  const v=G('veiculos',c.veiculoId); if(!v) return ''; const u=usoAberto(v.id); const gestor=ehGestor(); const meu=u&&u.condutorId===S.me.condutorId;
-  return `<div class="card stack" style="gap:10px"><div class="row" style="justify-content:space-between">${placaHTML(v)}${u?'<span class="pill p-info">Em uso</span>':statusPill(v)}</div>
-    <div><b>${esc(v.marca)} ${esc(v.modelo)}</b><br><small class="muted">${kmf(kmAtual(v))}${u?' · com '+esc(nomeCondutor(u)):' · livre'}</small></div>${gestor?kmBarHTML(c):''}
+  const v=G('veiculos',c.veiculoId); if(!v) return ''; const u=usoAberto(v.id); const gestor=ehGestor(); const meu=u&&u.condutorId===S.me.condutorId; const pv=preventivas(v).filter(p=>p.st!=='ok');
+  return `<div class="card stack" style="gap:10px"><div class="row" style="justify-content:space-between">${placaHTML(v)}${u?'<span class="pill p-info">Em uso</span>':pillCli(v)}</div>
+    <div><b>${esc(v.marca)} ${esc(v.modelo)}</b><br><small class="muted">${kmf(kmAtual(v))}${u?' · com '+esc(nomeCondutor(u)):' · livre'}${c.fim?' · contrato até '+dbr(c.fim):''}</small></div>${gestor?kmBarHTML(c):''}
+    ${pv.length?`<div class="row">${pv.map(p=>`<span class="pill ${PREV_ST[p.st][0]}">${esc(p.nome)}: ${PREV_ST[p.st][1].toLowerCase()}</span>`).join('')}</div>`:''}
     <div class="row">${u&&(gestor||meu)?B('Checkout','checkout','data-id="'+v.id+'"',1):B(u?'Assumir o carro':'Check-in','checkin','data-id="'+v.id+'"',!u)}${B('Abrir','pv','data-id="'+v.id+'"')}</div></div>`;
 }
+const P_VTABS=[['resumo','Resumo'],['contrato','Contrato'],['km','Km'],['uso','Uso'],['abast','Abastecimento'],['manut','Manutenção'],['vist','Vistorias'],['docs','Documentos'],['chamados','Chamados'],['multas','Multas']];
+function vistCard(x, gestor){ return `<div class="card stack" style="gap:8px"><div class="row" style="justify-content:space-between"><b>${esc(VIST_T[x.tipo]||x.tipo)}${x.momento?' · '+esc({retirada:'ao pegar',devolucao:'ao devolver',periodica:'rotina'}[x.momento]||''):''} · ${dtbr(x.data)}</b><span class="pill ${['aceita','revisada'].includes(x.status)?'p-ok':x.status==='contestada'?'p-bad':'p-warn'}">${esc(VIST_ST[x.status]||x.status)}</span></div>
+  <small class="muted">${kmf(x.km)} · combustível ${esc(x.combustivel||'—')}${x.condutorNome?' · por '+esc(x.condutorNome):''}</small>${Object.keys(x.checklist||{}).length?`<div><b>Itens com avaria:</b> ${Object.keys(x.checklist).map(esc).join(', ')}</div>`:'<div class="muted">Sem avarias registradas.</div>'}${x.avarias?`<div>${esc(x.avarias)}</div>`:''}<div class="row">${arqs(fotosVist(x))}</div>
+  ${gestor&&x.status==='aguardando_aceite'?`<div class="row"><button class="btn pri sm" data-act="aceitarVist" data-id="${x.id}">Aceitar vistoria</button><button class="btn sm danger" data-act="contestarVist" data-id="${x.id}">Contestar</button></div>`:''}</div>`; }
+function tabelaUsosP(us){ return tabela([{h:'Veículo',f:u=>vCell(u.veiculoId)},{h:'Condutor',f:u=>`<b>${esc(nomeCondutor(u))}</b>${u.retroativo?' <span class="tag">Retroativo</span>':''}${u.status==='encerrado_forcado'?' <span class="tag">Encerrado forçado</span>':''}`},{h:'Início',f:u=>dtbr(u.inicio)},{h:'Fim',f:u=>u.fim?dtbr(u.fim):'<span class="pill p-info">Em uso</span>'},{h:'Km',n:1,f:u=>`${kmf(u.kmInicial)}${u.kmFinal!=null?' → '+kmf(u.kmFinal):''}`},{h:'Rodado',n:1,f:u=>u.kmFinal!=null&&u.kmInicial!=null?kmf(u.kmFinal-u.kmInicial):'—'},{h:'Observações',f:u=>{ const o=[u.obsInicio,u.obsFim,u.justificativa].filter(Boolean).map(esc).join(' · '); return (o||'')+(u.kmSemCondutor>0&&!u.gapResolvido?` <span class="pill p-warn">${kmf(u.kmSemCondutor)} sem condutor</span>`:''); }},{h:'Fotos e local',f:usoAnexos}],us,'Nenhum uso registrado.'); }
 function pVeiculo(vid){
-  const v=G('veiculos',vid); const c=contratoDoVeiculo(vid); const gestor=ehGestor(); const u=usoAberto(vid); const meu=u&&u.condutorId===S.me.condutorId; const k=c?consumo(c):null;
-  const qa=[];
-  qa.push(u&&(gestor||meu)?`<button class="pri" data-act="checkout" data-id="${vid}">Checkout<small>Encerrar o uso</small></button>`:`<button class="pri" data-act="checkin" data-id="${vid}">Check-in<small>${u?'Assumir o carro agora':'Pegar o carro agora'}</small></button>`);
-  qa.push(`<button class="sos" data-act="emerg" data-id="${vid}">Emergência<small>Pane, acidente, guincho…</small></button>`);
-  qa.push(`<button data-act="pform" data-k="p_manut" data-id="${vid}">Solicitar manutenção<small>Pedir autorização à F2</small></button>`);
-  qa.push(`<button data-act="pform" data-k="p_problema" data-id="${vid}">Informar problema<small>Barulho, luz no painel…</small></button>`);
-  qa.push(`<button data-act="pform" data-k="p_km" data-id="${vid}">Informar km<small>Com foto do odômetro</small></button>`);
-  qa.push(`<button data-act="pform" data-k="p_reembolso" data-id="${vid}">Pedir reembolso<small>Com nota ou recibo</small></button>`);
-  if(gestor){ qa.push(`<button data-act="pform" data-k="p_preventiva" data-id="${vid}">Registrar serviço<small>Óleo, revisão, alinhamento</small></button>`);
-    qa.push(`<button data-act="retro" data-id="${vid}">Registrar uso esquecido<small>Quem dirigiu, com justificativa</small></button>`);
-    if(c&&c.kmContratado) qa.push(`<button data-act="ppacote" data-id="${c.id}">Contratar mais km<small>Pacotes do contrato</small></button>`);
-    if(c&&c.pdf) qa.push(`<button data-file="${esc(c.pdf)}">Contrato<small>PDF assinado</small></button>`); }
-  const ini=c?c.inicio:hoje();
-  const vist=L('vistorias').filter(x=>x.veiculoId===vid&&(x.data||'').slice(0,10)>=ini).sort((a,b)=>a.data<b.data?1:-1);
-  const manut=L('manutencoes').filter(m=>m.veiculoId===vid&&m.data>=ini&&m.status!=='cancelada').sort((a,b)=>a.data<b.data?1:-1);
-  const usos=L('usos').filter(x=>x.veiculoId===vid&&x.inicio.slice(0,10)>=ini&&(gestor||x.condutorId===S.me.condutorId)).sort((a,b)=>a.inicio<b.inicio?1:-1).slice(0,20);
-  return `<p style="margin:0 0 8px"><button class="btn ghost sm" data-act="pback">‹ Voltar</button></p>
-  <div class="row" style="gap:14px;margin-bottom:14px">${placaHTML(v,1)}<div><h1 style="font-size:24px">${esc(v.marca)} ${esc(v.modelo)}</h1><span class="muted">${kmf(kmAtual(v))}${u?' · com '+esc(nomeCondutor(u))+' desde '+dtbr(u.inicio):' · livre'}</span></div></div>
-  <div class="stack"><div class="qa">${qa.join('')}</div>
-  ${gestor&&c?`<section class="card stack"><h3 style="margin:0">Contrato e franquia</h3><dl class="info"><div><dt>Vigência</dt><dd>${dbr(c.inicio)} – ${dbr(c.fim)}</dd></div><div><dt>Aluguel</dt><dd>${money(c.aluguel)}</dd></div><div><dt>Km contratado</dt><dd>${c.kmContratado?nf(c.kmContratado)+' km '+(c.periodicidade==='total'?'no total':'por mês'):'Sem limite'}</dd></div><div><dt>Km excedente</dt><dd>${money(c.valorKmExcedente)}/km</dd></div></dl>${kmBarHTML(c)}${k&&!k.semLimite&&k.projFim!=null?`<p class="muted" style="margin:0;font-size:13px">Projeção para ${dbr(k.p.fim)}: ${kmf(k.projFim)}, pelo ritmo de ${nf(k.ritmo,1)} km/dia (estimativa).</p>`:''}</section>`:''}
-  ${vist.length?`<section><h3>Vistorias</h3><div class="stack" style="gap:8px">${vist.map(x=>`<div class="card stack" style="gap:8px"><div class="row" style="justify-content:space-between"><b>${esc(VIST_T[x.tipo]||x.tipo)} · ${dtbr(x.data)}</b><span class="pill ${x.status==='aceita'?'p-ok':x.status==='contestada'?'p-bad':'p-warn'}">${esc(VIST_ST[x.status]||x.status)}</span></div><small class="muted">${kmf(x.km)} · combustível ${esc(x.combustivel||'—')}</small>${Object.keys(x.checklist||{}).length?`<div><b>Itens com avaria:</b> ${Object.keys(x.checklist).map(esc).join(', ')}</div>`:'<div class="muted">Sem avarias registradas.</div>'}${x.avarias?`<div>${esc(x.avarias)}</div>`:''}<div class="row">${arqs(x.fotos)}</div>${gestor&&x.status==='aguardando_aceite'?`<div class="row"><button class="btn pri sm" data-act="aceitarVist" data-id="${x.id}">Aceitar vistoria</button><button class="btn sm danger" data-act="contestarVist" data-id="${x.id}">Contestar</button></div>`:''}</div>`).join('')}</div></section>`:''}
-  <section><h3>Uso recente</h3>${tabela([{h:'Condutor',f:u=>esc(nomeCondutor(u))+(u.retroativo?' <span class="tag">Retroativo</span>':'')},{h:'Início',f:u=>dtbr(u.inicio)},{h:'Fim',f:u=>u.fim?dtbr(u.fim):'<span class="pill p-info">Em uso</span>'},{h:'Rodado',n:1,f:u=>u.kmFinal!=null&&u.kmInicial!=null?kmf(u.kmFinal-u.kmInicial):'—'}],usos,'Nenhum uso registrado.')}</section>
-  <section><h3>Manutenções</h3>${tabela([{h:'Data',f:m=>dbr(m.data)},{h:'Serviço',f:m=>esc(catLbl(m.categoria))},{h:'Oficina',f:m=>esc(m.oficina||'—')},{h:'Responsável',f:m=>esc(['cliente','mau_uso_cliente'].includes(m.arcaCom)?'Cliente':m.arcaCom==='apuracao'?'Em análise':'F2')},{h:'Próxima',f:m=>[m.proximaData?dbr(m.proximaData):'',m.proximaKm?kmf(m.proximaKm):''].filter(Boolean).join(' · ')||'—'},{h:'NF',f:m=>arq(m.nf)}],manut,'Nenhuma manutenção neste contrato.')}</section></div>`;
+  const v=G('veiculos',vid); const c=contratoDoVeiculo(vid); const gestor=ehGestor(); const u=usoAberto(vid); const ini=c?c.inicio:hoje();
+  const cab=`<p style="margin:0 0 8px"><button class="btn ghost sm" data-act="pback">‹ Voltar</button></p>
+  <div class="row" style="gap:14px;margin-bottom:14px">${placaHTML(v,1)}<div><h1 style="font-size:24px">${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao||'')}</h1><span class="muted">${kmf(kmAtual(v))}${u?' · com '+esc(nomeCondutor(u))+' desde '+dtbr(u.inicio):' · livre'}</span></div></div>`;
+  if(!gestor){
+    const meusUsos=LC('usos').filter(x=>x.veiculoId===vid&&ehMeu(x)).sort((a,b)=>a.inicio<b.inicio?1:-1).slice(0,10);
+    return cab+`<div class="stack">${acoesVeiculo(vid)}${prevHTML(v,false)}<section><h3>Meus usos neste carro</h3>${tabelaUsosP(meusUsos)}</section></div>`;
+  }
+  const t=S.p.vtab||'resumo'; let body='';
+  if(t==='resumo'){ const al=pAlertas().filter(a=>a.titulo.includes((v.placa||'').toUpperCase()));
+    body=`<div class="stack">${acoesVeiculo(vid)}<div class="card"><dl class="info"><div><dt>Situação</dt><dd>${u?'<span class="pill p-info">Em uso</span>':statusPill(v)}</dd></div><div><dt>Com quem está</dt><dd>${u?esc(nomeCondutor(u))+' desde '+dtbr(u.inicio):'Ninguém'}</dd></div><div><dt>Km atual</dt><dd>${kmf(kmAtual(v))}</dd></div><div><dt>Ano</dt><dd>${esc(v.anoFab||'—')}/${esc(v.anoModelo||'—')}</dd></div><div><dt>Cor · combustível · câmbio</dt><dd>${esc([v.cor,v.combustivel,v.cambio].filter(Boolean).join(' · ')||'—')}</dd></div><div><dt>Renavam</dt><dd class="mono">${esc(v.renavam||'—')}</dd></div><div><dt>Contrato até</dt><dd>${c?dbr(c.fim):'—'}</dd></div><div><dt>Consumo médio</dt><dd>${(()=>{const m=consumoComb(vid).media; return m?nf(m,1)+' km/l':'—';})()}</dd></div></dl></div>
+      ${c?`<div class="card"><h3>Franquia de km</h3>${kmBarHTML(c)}</div>`:''}${prevHTML(v,true)}${al.length?avisosHTML(al):''}</div>`; }
+  else if(t==='contrato'){ body=c?contratoCard(c,true):'<div class="tw"><div class="empty">Sem contrato vigente.</div></div>';
+    const ant=contratosCli().filter(x=>x.veiculoId===vid&&x.id!==(c&&c.id)); if(ant.length) body+=`<section style="margin-top:16px"><h3>Contratos anteriores deste veículo</h3>${tabela([{h:'Vigência',f:x=>dbr(x.inicio)+' – '+dbr(x.fim)},{h:'Aluguel',n:1,f:x=>money(x.aluguel)},{h:'Franquia',f:x=>x.kmContratado?nf(x.kmContratado)+' km':'Sem limite'},{h:'PDF',f:x=>arq(x.pdf)}],ant,'')}</section>`; }
+  else if(t==='km'){ const ls=LC('leituras').filter(l=>l.veiculoId===vid&&(l.data||'').slice(0,10)>=ini).sort((a,b)=>a.data<b.data?1:-1); const k=c?consumo(c):null;
+    body=`<div class="stack">${c?`<div class="card stack"><h3 style="margin:0">Franquia ${dbr(k.p.ini)} – ${dbr(k.p.fim)}</h3>${kmBarHTML(c)}${k.semLimite?'':`<dl class="info"><div><dt>Rodados no período</dt><dd>${kmf(k.est)}</dd></div><div><dt>Pacotes extras</dt><dd>${kmf(k.pacKm)}</dd></div><div><dt>Ritmo médio</dt><dd>${k.ritmo!=null?nf(k.ritmo,1)+' km/dia':'—'}</dd></div><div><dt>Projeção no fim</dt><dd>${k.projFim!=null?kmf(k.projFim)+' <span class="tag">Estimado</span>':'—'}</dd></div><div><dt>Excedente previsto</dt><dd>${k.excProj!=null?kmf(k.excProj)+' · '+money(k.custoExcProj):'—'}</dd></div></dl>`}</div>`:''}
+      ${kmChart(ls.slice().reverse())}${tabela([{h:'Data',f:l=>dtbr(l.data)},{h:'Km',n:1,f:l=>kmf(l.km)},{h:'Origem',f:l=>esc(l.origem)},{h:'Status',f:l=>l.suspeita?'<span class="pill p-bad">Em conferência</span>':`<span class="pill ${l.status==='verificada'?'p-ok':''}">${esc(l.status)}</span>`},{h:'Foto',f:l=>arq(l.foto)}],ls,'Nenhuma leitura.')}</div>`; }
+  else if(t==='uso'){ body=`<div class="stack"><div class="row">${u?B('Checkout','checkout','data-id="'+vid+'"',1):B('Check-in','checkin','data-id="'+vid+'"',1)}${B('Registrar uso esquecido','retro','data-id="'+vid+'"')}</div>${tabelaUsosP(LC('usos').filter(x=>x.veiculoId===vid).sort((a,b)=>a.inicio<b.inicio?1:-1))}</div>`; }
+  else if(t==='abast'){ const as=LC('abastecimentos').filter(a=>a.veiculoId===vid).sort((a,b)=>a.data<b.data?1:-1); const m=consumoComb(vid).media;
+    body=`<div class="stack"><div class="row">${B('Registrar abastecimento','pform','data-k="p_abastecimento" data-id="'+vid+'"',1)}<span class="muted">Consumo médio: <b>${m?nf(m,1)+' km/l':'—'}</b> (entre tanques cheios)</span></div>${tabelaAbast(as,false)}</div>`; }
+  else if(t==='manut'){ const ms=LC('manutencoes').filter(m=>m.veiculoId===vid&&m.status!=='cancelada').sort((a,b)=>a.data<b.data?1:-1);
+    body=`<div class="stack">${prevHTML(v,true)}<div class="row">${B('Solicitar manutenção','pform','data-k="p_manut" data-id="'+vid+'"')}</div>${tabelaManutP(ms)}</div>`; }
+  else if(t==='vist'){ const vs=LC('vistorias').filter(x=>x.veiculoId===vid).sort((a,b)=>a.data<b.data?1:-1);
+    body=`<div class="stack"><div class="row">${B('Nova vistoria com fotos','pform','data-k="p_vistoria" data-id="'+vid+'"',1)}</div>${vs.length?vs.map(x=>vistCard(x,true)).join(''):'<div class="tw"><div class="empty">Nenhuma vistoria.</div></div>'}</div>`; }
+  else if(t==='docs'){ const ds=LC('documentos').filter(d=>d.veiculoId===vid).sort((a,b)=>(a.vencimento||'9')<(b.vencimento||'9')?-1:1);
+    body=`<div class="stack"><div class="row">${B('Acionar seguro','seguro','data-id="'+vid+'"')}${B('Enviar documento à F2','pform','data-k="p_documento" data-id="'+vid+'"')}</div>${tabela([{h:'Tipo',f:d=>esc(lbl(DOC_T,d.tipo))},{h:'Descrição',f:d=>esc(d.descricao||(d.tipo==='seguro'?[d.seguradora,d.apolice].filter(Boolean).join(' · '):'')||'—')+(d.tipo==='seguro'&&d.assistencia?`<br><small>Assistência: <a href="tel:${esc(String(d.assistencia).replace(/[^\d+]/g,''))}">${esc(d.assistencia)}</a></small>`:'')},{h:'Vencimento',f:d=>{ if(!d.vencimento) return '—'; const dd=diff(hoje(),d.vencimento); return `<span class="${dd<0?'pill p-bad':dd<=cfg().diasAvisoVenc?'pill p-warn':''}">${dbr(d.vencimento)}</span>`; }},{h:'Arquivo',f:d=>arq(d.arquivo)}],ds,'A F2 ainda não anexou documentos deste veículo.')}</div>`; }
+  else if(t==='chamados'){ body=chamadosLista(LC('chamados').filter(x=>x.veiculoId===vid)); }
+  else if(t==='multas'){ body=tabelaMultasP(LC('multas').filter(m=>m.veiculoId===vid)); }
+  return cab+`<div class="tabs" role="tablist">${P_VTABS.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-act="pvtab" data-tab="${k}">${l}</button>`).join('')}</div>`+body;
 }
+function contratoCard(c, semCab){ const v=G('veiculos',c.veiculoId)||{}; const k=consumo(c); const pend=LC('pacotes').filter(p=>p.contratoId===c.id&&p.status==='solicitado');
+  return `<div class="card stack">${semCab?'':`<div class="row" style="justify-content:space-between">${placaHTML(v)}<b>${esc(v.marca||'')} ${esc(v.modelo||'')}</b></div>`}
+    <dl class="info"><div><dt>Vigência</dt><dd>${dbr(c.inicio)} – ${dbr(c.fim)}${c.prazoMeses?' · '+c.prazoMeses+' meses':''}</dd></div><div><dt>Aluguel</dt><dd>${money(c.aluguel)} · vence dia ${esc(c.diaVenc||'—')}</dd></div><div><dt>Reajuste</dt><dd>${esc(c.reajIndice||'—')}${c.reajData?' · '+dbr(c.reajData):''}</dd></div>
+      <div><dt>Franquia</dt><dd>${c.kmContratado?nf(c.kmContratado)+' km '+(c.periodicidade==='total'?'no total':'por mês'):'Sem limite'}</dd></div><div><dt>Km excedente</dt><dd>${money(c.valorKmExcedente)}/km</dd></div><div><dt>Pacotes previstos</dt><dd>${(c.pacotesOferta||[]).map(p=>'+'+nf(p.km)+' km = '+money(p.preco)).join('<br>')||'—'}</dd></div><div><dt>Caução</dt><dd>${money(c.caucao)}</dd></div></dl>
+    ${kmBarHTML(c)}${k&&!k.semLimite&&k.projFim!=null?`<p class="muted" style="margin:0;font-size:13px">Projeção para ${dbr(k.p.fim)}: ${kmf(k.projFim)}, pelo ritmo de ${nf(k.ritmo,1)} km/dia (estimativa).</p>`:''}${pend.length?`<div class="note i">${pend.length} pedido(s) de pacote aguardando a F2.</div>`:''}
+    <div class="row">${c.pdf?`<button class="btn" data-file="${esc(c.pdf)}">Abrir contrato (PDF)</button>`:'<span class="pill p-warn">PDF ainda não anexado pela F2</span>'}${c.kmContratado&&(c.pacotesOferta||[]).length?B('Contratar mais km','ppacote','data-id="'+c.id+'"',1):''}${semCab?'':B('Abrir veículo','pv','data-id="'+c.veiculoId+'"')}</div></div>`; }
+function pContratos(){
+  const at=contratosAtivosCli().sort((a,b)=>PL(a.veiculoId)<PL(b.veiculoId)?-1:1); const ant=contratosCli().filter(c=>!contratoAtivo(c)); const pk=LC('pacotes').sort((a,b)=>(a.solicitadoEm||'')<(b.solicitadoEm||'')?1:-1);
+  const tot=at.reduce((s,c)=>s+(+c.aluguel||0),0);
+  return `<h1>Contratos e franquias de km</h1><p class="sub">Um contrato por veículo, cada um com sua franquia. Aluguel mensal somado: <b>${money(tot)}</b>.</p><div class="stack" style="margin-top:14px">
+    ${at.length?at.map(c=>contratoCard(c,false)).join(''):'<div class="tw"><div class="empty">Nenhum contrato ativo.</div></div>'}
+    <section><h3>Pedidos de km adicional</h3>${tabela([{h:'Veículo',f:k=>{const c=G('contratos',k.contratoId); return c?vCell(c.veiculoId):'—';}},{h:'Km',n:1,f:k=>kmf(k.km)},{h:'Preço',n:1,f:k=>money(k.preco)},{h:'Pedido em',f:k=>dtbr(k.solicitadoEm)},{h:'Situação',f:k=>`<span class="pill ${k.status==='aprovado'?'p-ok':k.status==='faturado'?'p-info':k.status==='recusado'?'p-bad':'p-warn'}">${esc({solicitado:'Aguardando F2',aprovado:'Aprovado',recusado:'Recusado',faturado:'Na fatura'}[k.status]||k.status)}</span>`}],pk,'Nenhum pedido.')}</section>
+    ${ant.length?`<section><h3>Contratos encerrados</h3>${tabela([{h:'Veículo',f:c=>vCell(c.veiculoId)},{h:'Vigência',f:c=>dbr(c.inicio)+' – '+dbr(c.fim)},{h:'Aluguel',n:1,f:c=>money(c.aluguel)},{h:'PDF',f:c=>arq(c.pdf)}],ant,'')}</section>`:''}</div>`;
+}
+function selVeicCond(){ const f=S.p.f; const vs=veicsCli(); const ds=LC('condutores').sort((a,b)=>String(a.nome).localeCompare(String(b.nome)));
+  return `<label class="fld" style="min-width:150px"><span class="hint">Veículo</span><select data-pf="v"><option value="">Todos</option>${vs.map(v=>`<option value="${esc(v.id)}"${f.v===v.id?' selected':''}>${esc((v.placa||'').toUpperCase())}</option>`).join('')}</select></label>
+  <label class="fld" style="min-width:170px"><span class="hint">Motorista</span><select data-pf="c"><option value="">Todos</option>${ds.map(d=>`<option value="${esc(d.id)}"${f.c===d.id?' selected':''}>${esc(d.nome)}</option>`).join('')}</select></label>`; }
+function filtrar(lista, campoData){ const f=S.p.f; return lista.filter(x=>(!f.v||x.veiculoId===f.v)&&(!f.c||x.condutorId===f.c)&&(!f.de||(x[campoData]||'').slice(0,10)>=f.de)&&(!f.ate||(x[campoData]||'').slice(0,10)<=f.ate)); }
+function pUso(){
+  const vs=veicsCli(); const us=filtrar(LC('usos'),'inicio').sort((a,b)=>a.inicio<b.inicio?1:-1); const f=S.p.f; S._usosP=us;
+  return `<div class="head"><div><h1>Uso dos veículos</h1><p class="sub">Quem dirigiu cada carro, quando e quanto rodou. Base para multas e sinistros.</p></div><div class="row">${B('Registrar uso esquecido','retro','')}</div></div><div class="stack">
+  <section><h3>Agora</h3>${tabela([{h:'Veículo',f:v=>placaHTML(v)},{h:'Situação',f:v=>{const u=usoAberto(v.id); return u?`<b>${esc(nomeCondutor(u))}</b><br><small class="muted">desde ${dtbr(u.inicio)} · ${kmf(u.kmInicial)}</small>`:statusPill(v);}},{h:'',f:v=>{const u=usoAberto(v.id); return u?B('Checkout','checkout','data-id="'+v.id+'"'):B('Check-in','checkin','data-id="'+v.id+'"');}}],vs,'Sem veículos.')}</section>
+  <div class="row" style="align-items:flex-end">${selVeicCond()}<label class="fld"><span class="hint">De</span><input type="date" data-pf="de" value="${esc(f.de||'')}"></label><label class="fld"><span class="hint">Até</span><input type="date" data-pf="ate" value="${esc(f.ate||'')}"></label>${B('Exportar planilha (CSV)','csvUso','')}</div>
+  <p class="muted" style="margin:0">${us.length} uso(s) · ${kmf(us.reduce((s,u)=>s+(u.kmFinal!=null&&u.kmInicial!=null?u.kmFinal-u.kmInicial:0),0))} rodados</p>${tabelaUsosP(us)}</div>`;
+}
+function pAbast(){
+  const f=S.p.f; const mes=f.mes||mesAtual(); const todos=LC('abastecimentos'); const as=filtrar(todos,'data').filter(a=>!mes||(a.data||'').slice(0,7)===mes).sort((a,b)=>a.data<b.data?1:-1); S._abastP=as;
+  const gasto=as.reduce((s,a)=>s+(+a.valor||0),0), lit=as.reduce((s,a)=>s+(+a.litros||0),0);
+  const medias=veicsCli().map(v=>({v,m:consumoComb(v.id).media})).filter(x=>x.m);
+  return `<div class="head"><div><h1>Abastecimento</h1><p class="sub">Notas, litros e consumo de cada carro. O combustível é por conta do cliente.</p></div><div class="row">${B('Registrar abastecimento','pformV','data-k="p_abastecimento"',1)}</div></div><div class="stack">
+  <div class="row" style="align-items:flex-end">${selVeicCond()}<label class="fld"><span class="hint">Mês</span><input type="month" data-pf="mes" value="${esc(mes)}"></label>${B('Exportar planilha (CSV)','csvAbast','')}</div>
+  <div class="kpis">${kpi('Gasto',money(gasto),mesbr(mes))}${kpi('Litros',nf(lit,1),as.length+' abastecimento(s)')}${kpi('Preço médio',lit?money(gasto/lit):'—','por litro')}${medias.map(x=>kpi('Consumo '+esc((x.v.placa||'').toUpperCase()),nf(x.m,1)+' km/l','média geral')).join('')}</div>
+  ${tabelaAbast(as,true)}</div>`;
+}
+function tabelaManutP(ms){ return tabela([{h:'Data',f:m=>dbr(m.data)},{h:'Veículo',f:m=>vCell(m.veiculoId)},{h:'Serviço',f:m=>esc(catLbl(m.categoria))+(m.registradoPeloCliente?' <span class="tag">Pelo cliente</span>':'')},{h:'Km',n:1,f:m=>kmf(m.km)},{h:'Oficina',f:m=>esc(m.oficina||'—')},{h:'Quem paga',f:m=>esc(['cliente','mau_uso_cliente'].includes(m.arcaCom)?'Cliente':m.arcaCom==='apuracao'?'Em análise':'F2')},{h:'Próxima',f:m=>[m.proximaData?dbr(m.proximaData):'',m.proximaKm?kmf(m.proximaKm):''].filter(Boolean).join(' · ')||'—'},{h:'NF',f:m=>arq(m.nf)}],ms,'Nenhuma manutenção registrada.'); }
+function pManut(){
+  const vs=veicsCli(); const ms=LC('manutencoes').filter(m=>m.status!=='cancelada').sort((a,b)=>a.data<b.data?1:-1); const abertos=LC('chamados').filter(c=>['manutencao','problema'].includes(c.tipo)&&!['resolvido','encerrado'].includes(c.status));
+  return `<div class="head"><div><h1>Manutenção</h1><p class="sub">Preventivas de cada carro, serviços feitos e pedidos em andamento.</p></div><div class="row">${B('Solicitar manutenção','pformV','data-k="p_manut"')}${B('Registrar serviço feito','pformV','data-k="p_preventiva"',1)}</div></div><div class="stack">
+  <div class="grid2">${vs.map(v=>`<div class="stack" style="gap:6px"><div class="row">${placaHTML(v)}<b>${esc(v.marca)} ${esc(v.modelo)}</b><small class="muted">${kmf(kmAtual(v))}</small></div>${prevHTML(v,false)}</div>`).join('')}</div>
+  ${abertos.length?`<section><h3>Pedidos em andamento</h3>${chamadosLista(abertos)}</section>`:''}
+  <section><h3>Histórico de manutenções</h3>${tabelaManutP(ms)}</section></div>`;
+}
+function chamadosLista(cs){ cs=cs.slice().sort((a,b)=>(a.criadoEm||'')<(b.criadoEm||'')?1:-1);
+  return cs.length?`<div class="stack" style="gap:10px">${cs.map(c=>`<div class="card stack" style="gap:6px"><div class="row" style="justify-content:space-between"><b>#${c.numero} · ${esc(lbl(CH_TIPO,c.tipo))} · ${esc(PL(c.veiculoId))}</b><span class="pill ${['resolvido','encerrado'].includes(c.status)?'p-ok':'p-info'}">${esc(lbl(CH_ST,c.status))}</span></div><div>${esc(c.descricao||'')}</div><small class="muted">Aberto em ${dtbr(locISO(c.criadoEm))}${(c.historico||[]).length>1?' · '+c.historico.map(x=>lbl(CH_ST,x.status)+' em '+dtbr(locISO(x.ts))).join(' → '):''}</small>${c.respostaF2?`<div class="note i"><b>Resposta da F2:</b> ${esc(c.respostaF2)}</div>`:''}<div class="row">${arqs(c.anexos)}${c.anexo?arq(c.anexo):''}${c.bo?arq(c.bo):''}</div></div>`).join('')}</div>`:'<div class="tw"><div class="empty">Nenhum chamado.</div></div>'; }
 function pChamados(){
-  const gestor=ehGestor(); const cs=L('chamados').filter(c=>gestor?c.clienteId===S.me.clienteId:c.criadoPor===S.uid).sort((a,b)=>(a.criadoEm||'')<(b.criadoEm||'')?1:-1);
-  return `<h1>${gestor?'Chamados':'Meus chamados'}</h1><p class="sub">Acompanhe cada pedido. Para abrir um novo, entre no veículo.</p><div class="stack" style="margin-top:14px">${cs.length?cs.map(c=>`<div class="card stack" style="gap:6px"><div class="row" style="justify-content:space-between"><b>#${c.numero} · ${esc(lbl(CH_TIPO,c.tipo))} · ${esc(((G('veiculos',c.veiculoId)||{}).placa||'').toUpperCase())}</b><span class="pill ${['resolvido','encerrado'].includes(c.status)?'p-ok':'p-info'}">${esc(lbl(CH_ST,c.status))}</span></div><div>${esc(c.descricao||'')}</div><small class="muted">Aberto em ${dtbr(locISO(c.criadoEm))}${(c.historico||[]).length>1?' · '+c.historico.map(x=>lbl(CH_ST,x.status)+' em '+dtbr(locISO(x.ts))).join(' → '):''}</small>${c.respostaF2?`<div class="note i"><b>Resposta da F2:</b> ${esc(c.respostaF2)}</div>`:''}<div class="row">${arqs(c.anexos)}${c.anexo?arq(c.anexo):''}</div></div>`).join(''):'<div class="tw"><div class="empty">Nenhum chamado ainda.</div></div>'}</div>`;
+  const cs=LC('chamados');
+  return `<div class="head"><div><h1>Chamados</h1><p class="sub">Pedidos de manutenção, problemas, emergências, sinistros e documentos enviados à F2.</p></div><div class="row">${B('Solicitar manutenção','pformV','data-k="p_manut"')}${B('Informar problema','pformV','data-k="p_problema"')}${B('Enviar documento','pformV','data-k="p_documento"')}</div></div>${chamadosLista(cs)}`;
 }
 function pFaturas(){
-  const fs=L('faturas').filter(f=>f.clienteId===S.me.clienteId&&f.status!=='cancelada').sort((a,b)=>a.competencia<b.competencia?1:-1);
-  return `<h1>Faturas</h1><p class="sub">Aluguel, pacotes de km, excedente e repasses de cada mês.</p><div style="margin-top:14px">${tabela([{h:'Competência',f:f=>`<b>${mesbr(f.competencia)}</b>`},{h:'Veículo',f:f=>vCell(f.veiculoId)},{h:'Itens',f:f=>(f.itens||[]).map(i=>`${esc(i.desc)}: ${money(i.valor)}`).join('<br>')},{h:'Total',n:1,f:f=>`<b>${money(f.total)}</b>`},{h:'Vencimento',f:f=>dbr(f.vencimento)},{h:'Situação',f:f=>{const at=f.status==='aberta'&&f.vencimento<hoje(); return `<span class="pill ${f.status==='paga'?'p-ok':at?'p-bad':'p-info'}">${f.status==='paga'?'Paga':at?'Em atraso':'Em aberto'}</span>`;}}],fs,'Nenhuma fatura emitida.')}</div>`;
+  const fs=LC('faturas').filter(f=>f.status!=='cancelada').sort((a,b)=>a.competencia<b.competencia?1:-1);
+  const ab=fs.filter(f=>f.status==='aberta'); const tot=ab.reduce((s,f)=>s+(+f.total||0),0);
+  return `<h1>Faturas</h1><p class="sub">Aluguel, pacotes de km, excedente e repasses de cada mês.${ab.length?' Em aberto: <b>'+money(tot)+'</b>.':''}</p><div style="margin-top:14px">${tabela([{h:'Competência',f:f=>`<b>${mesbr(f.competencia)}</b>`},{h:'Veículo',f:f=>vCell(f.veiculoId)},{h:'Itens',f:f=>(f.itens||[]).map(i=>`${esc(i.desc)}: ${money(i.valor)}`).join('<br>')},{h:'Total',n:1,f:f=>`<b>${money(f.total)}</b>`},{h:'Vencimento',f:f=>dbr(f.vencimento)},{h:'Situação',f:f=>{const at=f.status==='aberta'&&f.vencimento<hoje(); return `<span class="pill ${f.status==='paga'?'p-ok':at?'p-bad':'p-info'}">${f.status==='paga'?'Paga':at?'Em atraso':'Em aberto'}</span>`;}}],fs,'Nenhuma fatura emitida.')}</div>`;
 }
-function pMultas(){
-  const ms=L('multas').sort((a,b)=>a.dataHora<b.dataHora?1:-1);
-  return `<h1>Multas</h1><p class="sub">O condutor é sugerido pelo check-in do horário da infração. Confirme ou indique quem dirigia.</p><div style="margin-top:14px">${tabela([{h:'Infração',f:m=>`${dtbr(m.dataHora)}<br><small class="muted">${esc(m.local||'')}</small>`},{h:'Veículo',f:m=>vCell(m.veiculoId)},{h:'Valor',n:1,f:m=>money(m.valor)},{h:'Condutor',f:m=>{ if(m.condutorConfirmado) return `<b>${esc(m.condutorConfirmado)}</b> <span class="pill p-ok">indicado</span>`; const u=condutorSugerido(m.veiculoId,m.dataHora); return u?`${esc(nomeCondutor(u))} <span class="pill p-info">sugerido</span>`:'<span class="pill p-bad">Não identificado</span>'; }},{h:'Prazo',f:m=>dbr(m.prazoIndicacao)},{h:'',f:m=>m.condutorConfirmado?'':`<button class="btn sm pri" data-act="indicarMulta" data-id="${m.id}" data-nome="${esc((condutorSugerido(m.veiculoId,m.dataHora)&&nomeCondutor(condutorSugerido(m.veiculoId,m.dataHora)))||'')}">Indicar condutor</button>`}],ms,'Nenhuma multa.')}</div>`;
-}
+function tabelaMultasP(ms){ ms=ms.slice().sort((a,b)=>a.dataHora<b.dataHora?1:-1); return tabela([{h:'Infração',f:m=>`${dtbr(m.dataHora)}<br><small class="muted">${esc(m.local||'')}</small>`},{h:'Veículo',f:m=>vCell(m.veiculoId)},{h:'Valor',n:1,f:m=>money(m.valor)},{h:'Pontos',n:1,f:m=>esc(m.pontos??'—')},{h:'Condutor',f:m=>{ if(m.condutorConfirmado) return `<b>${esc(m.condutorConfirmado)}</b> <span class="pill p-ok">indicado</span>`; const u=condutorSugerido(m.veiculoId,m.dataHora); return u?`${esc(nomeCondutor(u))} <span class="pill p-info">sugerido pelo check-in</span>`:'<span class="pill p-bad">Não identificado</span>'; }},{h:'Prazo',f:m=>dbr(m.prazoIndicacao)},{h:'Notificação',f:m=>arq(m.notificacao)},{h:'',f:m=>m.condutorConfirmado?'':`<button class="btn sm pri" data-act="indicarMulta" data-id="${m.id}" data-nome="${esc((condutorSugerido(m.veiculoId,m.dataHora)&&nomeCondutor(condutorSugerido(m.veiculoId,m.dataHora)))||'')}">Indicar condutor</button>`}],ms,'Nenhuma multa.'); }
+function pMultas(){ return `<h1>Multas</h1><p class="sub">O condutor é sugerido pelo check-in do horário da infração. Confirme ou indique quem dirigia dentro do prazo.</p><div style="margin-top:14px">${tabelaMultasP(LC('multas'))}</div>`; }
+function contaDoCondutor(d){ const ps=(S.perfis||[]).filter(p=>p.condutor_id===d.id || (!p.condutor_id && d.email && String(p.email||'').toLowerCase()===String(d.email).toLowerCase())); return ps[0]||null; }
 function pCondutores(){
-  const ds=L('condutores').filter(d=>d.clienteId===S.me.clienteId).sort((a,b)=>String(a.nome).localeCompare(String(b.nome)));
-  return `<div class="head"><div><h1>Condutores</h1><p class="sub">Quem pode pegar os carros. Para usar o app, o condutor cria a conta com o mesmo e-mail e a F2 libera o acesso.</p></div><div class="row">${B('Novo condutor','new','data-k="p_condutor"',1)}</div></div>${tabela([{h:'Nome',f:d=>`<b>${esc(d.nome)}</b>`},{h:'CPF',f:d=>`<span class="mono">${esc(d.cpf||'—')}</span>`},{h:'E-mail',f:d=>esc(d.email||'—')},{h:'CNH vence',f:d=>d.cnhValidade?`<span class="${d.cnhValidade<hoje()?'pill p-bad':''}">${dbr(d.cnhValidade)}</span>`:'—'},{h:'Situação',f:d=>`<span class="pill ${d.status==='aprovado'?'p-ok':d.status==='bloqueado'?'p-bad':'p-warn'}">${esc({aprovado:'Aprovado',pendente:'Pendente',bloqueado:'Bloqueado'}[d.status]||d.status)}</span>`},{h:'',f:d=>d.status==='aprovado'?`<button class="btn sm danger" data-act="condStatus" data-st="bloqueado" data-id="${d.id}">Bloquear</button>`:`<button class="btn sm" data-act="condStatus" data-st="aprovado" data-id="${d.id}">Aprovar</button>`}],ds,'Nenhum condutor cadastrado.',d=>`data-act="edit" data-k="p_condutor" data-id="${d.id}"`)}`;
+  const ds=LC('condutores').sort((a,b)=>(a.status==='pendente'?0:1)-(b.status==='pendente'?0:1)||String(a.nome).localeCompare(String(b.nome)));
+  const soltas=(S.perfis||[]).filter(p=>p.cliente_id===S.me.clienteId && p.perfil==='condutor' && !p.ativo && !ds.some(d=>d.id===p.condutor_id));
+  return `<div class="head"><div><h1>Motoristas</h1><p class="sub">Quem pode pegar os carros. Cadastre o motorista com o e-mail dele, ou peça para ele criar a conta pelo QR code do carro. Depois, libere o acesso aqui.</p></div><div class="row">${B('Novo motorista','new','data-k="p_condutor"',1)}</div></div>
+  ${tabela([{h:'Nome',f:d=>`<b>${esc(d.nome)}</b>${d.autoCadastro?' <span class="tag">Pelo QR</span>':''}`},{h:'CPF',f:d=>`<span class="mono">${esc(d.cpf||'—')}</span>`},{h:'Contato',f:d=>esc([d.telefone,d.email].filter(Boolean).join(' · ')||'—')},{h:'CNH',f:d=>`${esc(d.cnh||'—')}${d.cnhValidade?`<br><span class="${d.cnhValidade<hoje()?'pill p-bad':'muted'}">vence ${dbr(d.cnhValidade)}</span>`:''}${d.cnhArquivo?'<br>'+arq(d.cnhArquivo):''}`},
+    {h:'Cadastro',f:d=>`<span class="pill ${d.status==='aprovado'?'p-ok':d.status==='bloqueado'?'p-bad':'p-warn'}">${esc({aprovado:'Aprovado',pendente:'Aguardando você',bloqueado:'Bloqueado'}[d.status]||d.status)}</span>`},
+    {h:'Acesso ao app',f:d=>{ const p=contaDoCondutor(d); return !p?'<span class="muted">Sem conta ainda</span>':p.ativo?`<span class="pill p-ok">Ativo</span><br><small class="muted">${esc(p.email||'')}</small>`:`<span class="pill p-warn">Aguardando liberação</span><br><small class="muted">${esc(p.email||'')}</small>`; }},
+    {h:'',f:d=>{ const p=contaDoCondutor(d); return d.status!=='aprovado'||(p&&!p.ativo)?`<button class="btn sm pri" data-act="aprovarCond" data-id="${d.id}">Liberar</button>${d.status!=='bloqueado'?` <button class="btn sm danger" data-act="bloquearCond" data-id="${d.id}">Recusar</button>`:''}`:`<button class="btn sm danger" data-act="bloquearCond" data-id="${d.id}">Bloquear</button>`; }}],ds,'Nenhum motorista cadastrado.',d=>`data-act="edit" data-k="p_condutor" data-id="${d.id}"`)}
+  ${soltas.length?`<p class="muted">${soltas.length} conta(s) aguardando vínculo: ${soltas.map(p=>esc(p.email)).join(', ')}. Cadastre o motorista com esse e-mail para liberar.</p>`:''}`;
 }
+function pRegistros(){
+  const us=LC('usos').filter(ehMeu).sort((a,b)=>a.inicio<b.inicio?1:-1).slice(0,30); const as=LC('abastecimentos').filter(ehMeu).sort((a,b)=>a.data<b.data?1:-1).slice(0,30);
+  const vs=LC('vistorias').filter(ehMeu).sort((a,b)=>a.data<b.data?1:-1).slice(0,10); const cs=LC('chamados').filter(ehMeu); const rs=LC('reembolsos').filter(ehMeu).sort((a,b)=>(a.criadoEm||'')<(b.criadoEm||'')?1:-1);
+  return `<h1>Meus registros</h1><p class="sub">Tudo o que você registrou no app.</p><div class="stack" style="margin-top:14px">
+  <section><h3>Usos</h3>${tabelaUsosP(us)}</section><section><h3>Abastecimentos</h3>${tabelaAbast(as,true)}</section>
+  <section><h3>Chamados</h3>${chamadosLista(cs)}</section>
+  <section><h3>Reembolsos</h3>${tabela([{h:'Data',f:r=>dbr(locISO(r.criadoEm))},{h:'Veículo',f:r=>vCell(r.veiculoId)},{h:'Motivo',f:r=>esc(r.motivo)},{h:'Valor',n:1,f:r=>money(r.valor)},{h:'Situação',f:r=>`<span class="pill ${r.status==='pago'?'p-ok':r.status==='recusado'?'p-bad':'p-warn'}">${esc(lbl(RB_ST,r.status))}</span>`}],rs,'Nenhum reembolso.')}</section>
+  <section><h3>Vistorias</h3>${vs.length?`<div class="stack" style="gap:10px">${vs.map(x=>vistCard(x,false)).join('')}</div>`:'<div class="tw"><div class="empty">Nenhuma vistoria.</div></div>'}</section></div>`;
+}
+function pCadastro(){ const d=meuCondutor();
+  if(!d) return '<h1>Meu cadastro</h1><div class="note">Seu usuário ainda não está ligado a um cadastro de motorista. Fale com o gestor.</div>';
+  return `<h1>Meu cadastro</h1><p class="sub">Mantenha a CNH em dia: ela é conferida antes do check-in.</p><div class="card stack" style="margin-top:14px"><dl class="info"><div><dt>Nome</dt><dd>${esc(d.nome)}</dd></div><div><dt>CPF</dt><dd class="mono">${esc(d.cpf||'—')}</dd></div><div><dt>Telefone</dt><dd>${esc(d.telefone||'—')}</dd></div><div><dt>E-mail</dt><dd>${esc(d.email||S.me.email||'—')}</dd></div><div><dt>CNH</dt><dd>${esc(d.cnh||'—')}</dd></div><div><dt>Validade da CNH</dt><dd>${d.cnhValidade?`<span class="${d.cnhValidade<hoje()?'pill p-bad':''}">${dbr(d.cnhValidade)}</span>`:'—'}</dd></div><div><dt>Foto da CNH</dt><dd>${d.cnhArquivo?arq(d.cnhArquivo):'—'}</dd></div><div><dt>Situação</dt><dd><span class="pill ${d.status==='aprovado'?'p-ok':'p-warn'}">${esc({aprovado:'Aprovado',pendente:'Pendente',bloqueado:'Bloqueado'}[d.status]||d.status)}</span></dd></div></dl>
+    <div class="row">${B('Atualizar meus dados','edit','data-k="p_meucadastro" data-id="'+d.id+'"',1)}</div><small class="muted">Seus dados são usados só para o controle de uso dos carros (check-in, multas e sinistros), conforme o contrato e a LGPD.</small></div>`; }
 function openEmergencia(vid){
   const dlg=$('#dlg'); if(dlg.open) dlg.close();
-  dlg.innerHTML=`<div class="dbody"><div class="dh"><h2>Emergência</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc stack"><div class="note b">Se houver risco à vida, ligue primeiro para 190 (Polícia) ou 192 (SAMU).</div><div class="qa">${Object.entries(EMERG).map(([k,l])=>`<button class="${['acidente','roubo','furto'].includes(k)?'sos':''}" data-act="emergTipo" data-id="${vid}" data-tipo="${k}">${l}</button>`).join('')}</div></div></div>`;
+  dlg.innerHTML=`<div class="dbody"><div class="dh"><h2>Emergência</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc stack"><div class="note b">Se houver risco à vida, ligue primeiro para 190 (Polícia) ou 192 (SAMU).</div><div class="qa">${Object.entries(EMERG).map(([k,l])=>`<button class="${['acidente','roubo','furto'].includes(k)?'sos':''}" data-act="emergTipo" data-id="${vid}" data-tipo="${k}">${l}</button>`).join('')}</div>${(()=>{const s=seguroDoVeiculo(vid); return s&&s.assistencia?`<p style="margin:0">Assistência 24 h do seguro: <a href="tel:${esc(String(s.assistencia).replace(/[^\d+]/g,''))}"><b>${esc(s.assistencia)}</b></a></p>`:'';})()}</div></div>`;
   dlg.querySelector('[data-close]').onclick=()=>dlg.close(); dlg.showModal();
 }
 function openPacotePortal(cid){
-  const c=G('contratos',cid); if(!c) return; const k=consumo(c); const ofs=c.pacotesOferta||[]; const pend=L('pacotes').filter(p=>p.contratoId===cid&&p.status==='solicitado');
+  const c=G('contratos',cid); if(!c) return; const k=consumo(c); const ofs=c.pacotesOferta||[]; const pend=LC('pacotes').filter(p=>p.contratoId===cid&&p.status==='solicitado');
   const dlg=$('#dlg'); if(dlg.open) dlg.close();
-  dlg.innerHTML=`<div class="dbody"><div class="dh"><h2>Contratar mais km</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc stack">${kmBarHTML(c)}
+  dlg.innerHTML=`<div class="dbody"><div class="dh"><h2>Contratar mais km · ${esc(PL(c.veiculoId))}</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc stack">${kmBarHTML(c)}
     ${k&&k.excProj>0?`<div class="note">No ritmo atual, a previsão é passar ${kmf(k.excProj)} da franquia, o que custaria ${money(k.custoExcProj)} em km excedente (estimativa).</div>`:''}
     ${pend.length?`<div class="note i">Você já tem ${pend.length} pedido(s) aguardando aprovação da F2.</div>`:''}
     ${ofs.length?ofs.map((o,i)=>`<div class="card row" style="justify-content:space-between"><div><b>+${nf(o.km)} km</b><br><small class="muted">${money(o.preco)} · ${money(o.preco/o.km)}/km${c.valorKmExcedente?' · excedente custa '+money(c.valorKmExcedente)+'/km':''}</small></div><button class="btn pri" data-act="pedirPacote" data-id="${cid}" data-i="${i}">Solicitar</button></div>`).join(''):'<p class="muted">Seu contrato não prevê pacotes adicionais. Fale com a F2.</p>'}</div></div>`;
   dlg.querySelector('[data-close]').onclick=()=>dlg.close(); dlg.showModal();
+}
+
+/* ---------- "Ver como" (equipe F2) ---------- */
+function openVerComo(){
+  const cs=L('clientes'); if(!cs.length) return toast('Cadastre um cliente primeiro.');
+  const dlg=$('#dlg'); if(dlg.open) dlg.close();
+  dlg.innerHTML=`<form id="frm"><div class="dh"><h2>Ver o app como cliente</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc"><p class="muted" style="margin:0 0 12px">Mostra exatamente o que o gestor ou o motorista vê, sem precisar de outra conta. Nada é gravado nesse modo.</p><div class="fgrid">
+    <div class="fld"><label for="vc_c">Cliente</label><select id="vc_c">${cs.map(c=>`<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')}</select></div>
+    <div class="fld"><label for="vc_p">Como</label><select id="vc_p"><option value="gestor">Gestor da frota</option><option value="condutor">Motorista</option></select></div>
+    <div class="fld full" id="vc_dw" hidden><label for="vc_d">Motorista</label><select id="vc_d"></select></div></div><p class="hint" id="ferr" hidden style="color:var(--danger)"></p></div>
+    <div class="df"><button type="button" class="btn" data-close>Cancelar</button><button class="btn pri" id="fsub">Ver</button></div></form>`;
+  const f=$('#frm'); f.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dlg.close());
+  const upd=()=>{ const cli=f.querySelector('#vc_c').value, p=f.querySelector('#vc_p').value; f.querySelector('#vc_dw').hidden=p!=='condutor'; f.querySelector('#vc_d').innerHTML=L('condutores').filter(d=>d.clienteId===cli).map(d=>`<option value="${esc(d.id)}">${esc(d.nome)}</option>`).join(''); };
+  f.querySelector('#vc_c').onchange=upd; f.querySelector('#vc_p').onchange=upd; upd();
+  f.onsubmit=e=>{ e.preventDefault(); const cli=f.querySelector('#vc_c').value, p=f.querySelector('#vc_p').value, d=f.querySelector('#vc_d').value;
+    if(p==='condutor' && !d){ const er=$('#ferr'); er.textContent='Este cliente ainda não tem motorista cadastrado.'; er.hidden=false; return; }
+    S.preview={me:S.me,route:S.route}; S.me={...S.me,perfil:p,clienteId:cli,condutorId:p==='condutor'?d:null,nome:p==='condutor'?(G('condutores',d)||{}).nome||'Motorista':'Gestor (visualização)'};
+    S.p={tab:'inicio',vid:null,f:{},vtab:'resumo'}; document.querySelector('.app').classList.add('portal'); dlg.close(); window.scrollTo(0,0); render(); };
+  dlg.showModal();
+}
+function sairVerComo(){ if(!S.preview) return; S.me=S.preview.me; const r=S.preview.route; S.preview=null; document.querySelector('.app').classList.remove('portal'); S.route=r||{view:'painel'}; render(); }
+const ACOES_VER=['ptab','pv','pback','pvtab','sairVerComo','csvUso','csvAbast','qr','seguro','emerg'];
+
+/* ---------- cadastro do motorista pelo QR (conta ainda sem acesso) ---------- */
+function telaCadastroMotorista(user, perfil, vid){
+  telaShell(`<h1>Cadastro de motorista</h1><p class="muted">Você leu o QR code de um carro da F2 Carloc. Preencha seus dados: o gestor da sua empresa confere e libera o acesso ao check-in.</p>
+  <form class="card stack" id="cm"><div class="fld"><label for="cm_n">Nome completo</label><input id="cm_n" required value="${esc(perfil.nome&&perfil.nome!==user.email?perfil.nome:'')}" autocomplete="name"></div>
+  <div class="fgrid"><div class="fld"><label for="cm_c">CPF</label><input id="cm_c" required inputmode="numeric"></div><div class="fld"><label for="cm_t">Telefone (WhatsApp)</label><input id="cm_t" required inputmode="tel" autocomplete="tel"></div>
+  <div class="fld"><label for="cm_h">Nº da CNH</label><input id="cm_h" required inputmode="numeric"></div><div class="fld"><label for="cm_v">Validade da CNH</label><input id="cm_v" type="date" required></div></div>
+  <div class="fld chk"><input id="cm_l" type="checkbox"><label for="cm_l">Estou ciente de que o app registra quem usa o carro, o km e a localização no momento do check-in e do checkout (LGPD).</label></div>
+  <p class="hint" id="cm_x" hidden style="color:var(--danger)"></p><button class="btn pri" id="cm_b">Enviar para o gestor</button></form><button class="btn ghost" id="sx">Sair</button>`);
+  $('#sx').onclick=sair;
+  $('#cm').onsubmit=async e=>{ e.preventDefault(); const x=$('#cm_x'); x.hidden=true; const g=id=>$(id).value.trim();
+    if(!g('#cm_n')||!g('#cm_c')||!g('#cm_t')||!g('#cm_h')||!g('#cm_v')){ x.textContent='Preencha todos os campos.'; x.hidden=false; return; }
+    if(!$('#cm_l').checked){ x.textContent='Marque a ciência sobre o registro de uso para continuar.'; x.hidden=false; return; }
+    $('#cm_b').disabled=true;
+    const {error}=await Supa.sb.rpc('f2_cadastro_condutor',{p_veiculo:vid,p_dados:{nome:g('#cm_n'),cpf:g('#cm_c'),telefone:g('#cm_t'),cnh:g('#cm_h'),cnhValidade:g('#cm_v'),consentimento:true}});
+    if(error){ $('#cm_b').disabled=false; x.textContent=error.message||'Não foi possível enviar.'; x.hidden=false; return; }
+    telaShell(`<h1>Cadastro enviado</h1><p class="muted">O gestor da sua empresa recebeu seus dados. Quando ele liberar, abra o app de novo (ou leia o QR do carro) para fazer o check-in.</p><div class="row"><button class="btn pri" id="vn">Já liberou? Verificar</button><button class="btn ghost" id="sx">Sair</button></div>`); $('#vn').onclick=()=>location.reload(); $('#sx').onclick=sair; };
 }
 
 /* ===================== backup e importação ===================== */
@@ -1408,7 +1782,8 @@ function telaConexao(msg){
 }
 function telaLogin(modo){
   const cad=modo==='cadastro', rec=modo==='recuperar';
-  telaShell(`<h1>${cad?'Criar conta':rec?'Recuperar senha':'Entrar'}</h1><p class="muted">${cad?'Depois de criar, a F2 libera seu acesso e define seu perfil.':rec?'Enviaremos um link para você criar uma nova senha.':'Use seu e-mail e senha.'}</p>
+  const qr=qrPendente();
+  telaShell(`${qr&&!rec?'<div class="note i"><b>QR code do carro lido.</b> Entre com sua conta para fazer o check-in. Primeira vez? Toque em <b>Criar conta</b>.</div>':''}<h1>${cad?'Criar conta':rec?'Recuperar senha':'Entrar'}</h1><p class="muted">${cad?(qr?'Depois de criar, você preenche seus dados de motorista e o gestor da sua empresa libera.':'Depois de criar, a F2 ou o gestor da sua empresa libera seu acesso.'):rec?'Enviaremos um link para você criar uma nova senha.':'Use seu e-mail e senha.'}</p>
   <form class="card stack" id="lg">${cad?'<div class="fld"><label for="lg_n">Nome completo</label><input id="lg_n" required autocomplete="name"></div>':''}<div class="fld"><label for="lg_e">E-mail</label><input id="lg_e" type="email" autocomplete="email" required></div>${rec?'':`<div class="fld"><label for="lg_s">Senha</label><input id="lg_s" type="password" autocomplete="${cad?'new-password':'current-password'}" minlength="6" required>${cad?'<span class="hint">Mínimo de 6 caracteres.</span>':''}</div>`}<p class="hint" id="lg_x" hidden style="color:var(--danger)"></p><button class="btn pri" id="lg_b">${cad?'Criar conta':rec?'Enviar link':'Entrar'}</button></form>
   <p class="row"><button class="btn ghost sm" id="lg_t">${cad||rec?'Voltar para entrar':'Criar conta'}</button>${cad||rec?'':'<button class="btn ghost sm" id="lg_r">Esqueci minha senha</button>'}${credenciais()&&!credenciais().fixo?'<button class="btn ghost sm" id="lg_c">Trocar projeto</button>':''}</p>`);
   $('#lg_t').onclick=()=>telaLogin(cad||rec?'':'cadastro'); const r=$('#lg_r'); if(r) r.onclick=()=>telaLogin('recuperar');
@@ -1436,23 +1811,25 @@ async function carregarTudo(){
 }
 async function carregarPerfis(){ const {data}=await Supa.sb.from('perfis').select('*').order('nome'); S.perfis=data||[]; }
 async function iniciarSessao(user){
-  const {data:p,error}=await Supa.sb.from('perfis').select('*').eq('id',user.id).maybeSingle();
+  let {data:p,error}=await Supa.sb.from('perfis').select('*').eq('id',user.id).maybeSingle();
   if(error){ telaConexao('O banco não respondeu como esperado: '+error.message+'. Rode o script instalacao.sql.'); return; }
-  if(!p || !p.ativo || p.perfil==='pendente'){ telaShell(`<h1>Acesso aguardando liberação</h1><p class="muted">Sua conta (${esc(user.email)}) foi criada. O administrador da F2 precisa liberar o acesso e definir seu perfil em Configurações → Usuários.</p><div class="row"><button class="btn" id="vn">Verificar de novo</button><button class="btn ghost" id="sx">Sair</button></div>`); $('#vn').onclick=()=>location.reload(); $('#sx').onclick=sair; return; }
+  if(p && !p.ativo && p.perfil==='pendente'){ try{ const r=await Supa.sb.rpc('f2_vincular'); if(r.data){ const r2=await Supa.sb.from('perfis').select('*').eq('id',user.id).maybeSingle(); if(r2.data) p=r2.data; } }catch(e){} }
+  if(p && !p.ativo && qrPendente() && (p.perfil==='pendente' || (p.perfil==='condutor' && !p.cliente_id))){ telaCadastroMotorista(user,p,qrPendente()); return; }
+  if(!p || !p.ativo || p.perfil==='pendente'){ const mot=p&&p.perfil==='condutor'; telaShell(`<h1>${mot?'Cadastro enviado ao gestor':'Acesso aguardando liberação'}</h1><p class="muted">Sua conta (${esc(user.email)}) foi criada. ${mot?'O gestor da sua empresa precisa conferir seus dados e liberar o acesso em Motoristas.':'A F2 (ou o gestor da sua empresa, se você é motorista) precisa liberar o acesso.'} Se você é motorista, também pode ler o QR code colado no carro.</p><div class="row"><button class="btn" id="vn">Verificar de novo</button><button class="btn ghost" id="sx">Sair</button></div>`); $('#vn').onclick=()=>location.reload(); $('#sx').onclick=sair; return; }
   if(['gestor','condutor'].includes(p.perfil) && !p.cliente_id){ telaShell('<h1>Perfil incompleto</h1><p class="muted">Seu usuário ainda não está vinculado a um cliente. Peça à F2 para completar o cadastro.</p><button class="btn" id="sx">Sair</button>'); $('#sx').onclick=sair; return; }
   S.me={id:user.id,email:user.email,nome:p.nome||user.email,perfil:p.perfil,clienteId:p.cliente_id,condutorId:p.condutor_id}; S.uid=user.id;
   telaShell('<h1>Carregando…</h1><p class="muted">Sincronizando os dados.</p>');
   try{ await carregarTudo(); }catch(e){ telaConexao('Erro ao ler os dados: '+(e.message||e)); return; }
-  if(ehEquipe()) await carregarPerfis();
+  if(ehEquipe()||p.perfil==='gestor') await carregarPerfis();
   Supa.sb.rpc('f2_registrar_acesso').then(()=>{},()=>{});
   S.db=LocalDB; S.assets={upload:(f,cid)=>Anexos.salvar(f,cid)};
   Supa.chan=Supa.sb.channel('f2-registros').on('postgres_changes',{event:'*',schema:'public',table:'registros'},pl=>Store.aplicar(pl))
     .subscribe(st=>{ if(st==='SUBSCRIBED'){ if(Supa.caiu){ Supa.caiu=false; carregarTudo().catch(()=>{}); } setSync('ok'); } else if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(st)){ Supa.caiu=true; setSync('off'); } });
   Store.subs.add(agenda);
   const app=document.querySelector('.app'); app.classList.remove('setup'); app.classList.toggle('portal',ehCliente());
-  S.route={view:ehCliente()?'p':'painel'}; S.p={tab:'inicio',vid:null};
+  S.route={view:ehCliente()?'p':'painel'}; S.p={tab:'inicio',vid:null,f:{},vtab:'resumo'};
   window.addEventListener('focus',()=>{ if(Date.now()-Supa.ultimaCarga>120000) carregarTudo().catch(()=>{}); });
-  render();
+  render(); tratarQR();
   setInterval(()=>{ if(!document.querySelector('dialog[open]')) render(); }, 60000);
 }
 boot();
