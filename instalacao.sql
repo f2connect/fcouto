@@ -91,24 +91,38 @@ create policy reg_equipe on public.registros for all to authenticated
   using (public.f2_equipe()) with check (public.f2_equipe());
 
 -- Cliente (gestor e condutor): só os registros do próprio cliente; nunca financeiro interno nem auditoria
+create or replace function public.f2_condutor_id() returns text
+  language sql stable security definer set search_path = public as
+$$ select condutor_id from perfis where id = auth.uid() and ativo and perfil = 'condutor' $$;
+
+-- Leitura do lado do cliente:
+--   gestor (administrativo do cliente): tudo da própria empresa, menos o financeiro interno e a auditoria da F2;
+--   motorista: só carros, uso, km, abastecimento, vistorias, chamados e manutenções, e o próprio cadastro.
+--   Contratos, valores, faturas, pacotes, multas, documentos e dados de outros motoristas ficam fora.
+--   Modelos de plano (preços) são só da F2. Compra, consórcio e venda dos carros ficam em veiculos_fin, só da F2.
 drop policy if exists reg_cliente_ler on public.registros;
 create policy reg_cliente_ler on public.registros for select to authenticated
-  using (colecao = 'config'
+  using ((colecao = 'config' and id <> 'planos')
          or (cliente_id is not null and cliente_id = public.f2_cliente()
-             and colecao not in ('lancamentos','auditoria')
-             and not (public.f2_perfil() = 'condutor' and colecao in ('faturas','pacotes'))));
+             and colecao not in ('lancamentos','auditoria','veiculos_fin')
+             and (public.f2_perfil() = 'gestor'
+                  or colecao in ('veiculos','usos','leituras','abastecimentos','vistorias','chamados','manutencoes')
+                  or (colecao = 'condutores' and id = public.f2_condutor_id()))));
 
 drop policy if exists reg_cliente_inserir on public.registros;
 create policy reg_cliente_inserir on public.registros for insert to authenticated
-  with check (cliente_id = public.f2_cliente()
-              and colecao in ('chamados','reembolsos','leituras','usos','pacotes','condutores','manutencoes','auditoria','abastecimentos','vistorias'));
+  with check (cliente_id = public.f2_cliente() and (
+    (public.f2_perfil() = 'gestor' and colecao in ('chamados','reembolsos','leituras','usos','pacotes','condutores','manutencoes','auditoria','abastecimentos','vistorias'))
+    or (public.f2_perfil() = 'condutor' and colecao in ('chamados','leituras','usos','auditoria','abastecimentos','vistorias'))));
 
 drop policy if exists reg_cliente_alterar on public.registros;
 create policy reg_cliente_alterar on public.registros for update to authenticated
-  using (cliente_id = public.f2_cliente()
-         and colecao in ('usos','vistorias','multas','condutores','chamados','reembolsos','abastecimentos'))
-  with check (cliente_id = public.f2_cliente()
-         and colecao in ('usos','vistorias','multas','condutores','chamados','reembolsos','abastecimentos'));
+  using (cliente_id = public.f2_cliente() and (
+    (public.f2_perfil() = 'gestor' and colecao in ('usos','vistorias','multas','condutores','chamados','reembolsos','abastecimentos'))
+    or (public.f2_perfil() = 'condutor' and (colecao in ('usos','abastecimentos') or (colecao = 'condutores' and id = public.f2_condutor_id())))))
+  with check (cliente_id = public.f2_cliente() and (
+    (public.f2_perfil() = 'gestor' and colecao in ('usos','vistorias','multas','condutores','chamados','reembolsos','abastecimentos'))
+    or (public.f2_perfil() = 'condutor' and (colecao in ('usos','abastecimentos') or (colecao = 'condutores' and id = public.f2_condutor_id())))));
 
 -- 6. Tempo real
 do $$ begin
