@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>F2 Conect</title>
 <meta name="theme-color" content="#0b6a4c">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -190,6 +190,8 @@ a{color:var(--accent)}
 .chklist label{display:flex;gap:8px;align-items:center;font-weight:500;color:var(--fg);font-size:14px}
 details summary{cursor:pointer}
 @media (max-width:560px){ .alert{grid-template-columns:6px minmax(0,1fr)} .alert>.btn{grid-column:2;justify-self:start} .alert>span:last-child:empty{display:none} }
+.porta{display:block;text-decoration:none;color:var(--fg);border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:16px 18px}
+.porta:hover{border-color:var(--accent)}.porta b{display:block;font-family:var(--f-display);font-size:20px}.porta small{color:var(--muted);font-size:14px}
 .qrcard{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;border:1px dashed var(--line);border-radius:10px;padding:18px}
 .qrsvg{width:min(260px,70vw);background:#fff;padding:6px;border-radius:6px}.qrsvg svg{display:block;width:100%;height:auto}
 @media print{ body *{visibility:hidden!important} #qrprint,#qrprint *{visibility:visible!important} #qrprint{position:fixed;left:0;top:0;width:100%;border:0;color:#000} dialog::backdrop{background:none} }
@@ -199,7 +201,7 @@ details summary{cursor:pointer}
 <body>
 <div class="app">
   <aside class="side">
-    <div class="brand"><div class="brand-mark">F2</div><div><b>F2 Conect</b><small>Painel interno</small></div></div>
+    <div class="brand"><div class="brand-mark">F2</div><div><b>F2 Conect</b><small>Painel F2 · interno</small></div></div>
     <nav class="nav" id="nav" aria-label="Módulos"></nav>
     <div class="side-foot" id="sideFoot"></div>
   </aside>
@@ -211,13 +213,13 @@ details summary{cursor:pointer}
 <dialog id="ask"></dialog>
 <div id="toast" hidden></div>
 
-<script src="config.js"></script>
+<script src="/config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 "use strict";
 /* ===================== estado e utilidades ===================== */
 const S = { db:null, user:null, assets:null, downloads:null, uid:null, data:{}, config:null, loaded:new Set(), route:{view:'painel'}, ui:{mes:null, vtab:'resumo'}, names:{}, ro:false };
-const COLS = ['clientes','condutores','veiculos','contratos','usos','leituras','manutencoes','chamados','reembolsos','multas','documentos','pacotes','faturas','lancamentos','vistorias','abastecimentos'];
+const COLS = ['clientes','condutores','veiculos','contratos','usos','leituras','manutencoes','chamados','reembolsos','multas','documentos','pacotes','faturas','lancamentos','vistorias','abastecimentos','veiculos_fin'];
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const z = n => String(n).padStart(2,'0');
@@ -235,7 +237,8 @@ const dbr = s => s ? s.slice(0,10).split('-').reverse().join('/') : '—';
 const dtbr = s => s ? dbr(s)+(s.length>10?' '+s.slice(11,16):'') : '—';
 const mesbr = s => { if(!s) return '—'; const [y,m]=s.split('-'); return ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+m-1]+'/'+y; };
 const L = c => all(c).filter(d => !d.excluido);
-const G = (c,id) => { const e=Store.docs[c+'/'+id]; return e ? {id,...e.d} : undefined; };
+const G = (c,id) => { const e=Store.docs[c+'/'+id]; if(!e) return undefined; const fin=c==='veiculos'?(Store.docs['veiculos_fin/'+id]||{}).d:null; return {id,...e.d,...(fin||{})}; };
+const FIN_V = k => k==='obs' || (/^(aq|cs|vd)[A-Z]/.test(k) && k!=='aqData');
 const r2 = v => Math.round(v*100)/100;
 
 /* ===================== Supabase: dados sincronizados ===================== */
@@ -261,7 +264,7 @@ const Store = { docs:{}, ver:0, subs:new Set(), t:null,
 function erroSupa(e){ const m=(e&&e.message)||String(e||''); if(/uso_aberto_unico|duplicate key/i.test(m)) return 'Outro check-in acabou de ser registrado neste veículo. Atualize a tela e tente de novo.'; if(/row-level security|permission|not authorized|Unauthorized/i.test(m)) return 'Sem permissão para esta ação no seu perfil.'; if(/Failed to fetch|NetworkError|fetch/i.test(m)) return 'Sem conexão com o servidor. Verifique a internet.'; return m||'Erro ao gravar no servidor.'; }
 function setSync(st){ Supa.estado=st; document.querySelectorAll('.sync').forEach(el=>{ el.textContent={ok:'Sincronizado',salvando:'Salvando…',erro:'Erro ao salvar',off:'Reconectando…'}[st]||st; el.className='sync s-'+st; }); }
 const _cache={};
-const all = c => { const k=_cache[c]; if(k && k.v===Store.ver) return k.a; const pre=c+'/'; const a=[]; for(const p in Store.docs){ if(p.startsWith(pre) && p.indexOf('/',pre.length)<0) a.push({id:p.slice(pre.length),...Store.docs[p].d}); } _cache[c]={v:Store.ver,a}; return a; };
+const all = c => { const k=_cache[c]; if(k && k.v===Store.ver) return k.a; const pre=c+'/'; const a=[]; for(const p in Store.docs){ if(p.startsWith(pre) && p.indexOf('/',pre.length)<0) { const id=p.slice(pre.length); const fin=c==='veiculos'?(Store.docs['veiculos_fin/'+id]||{}).d:null; a.push({id,...Store.docs[p].d,...(fin||{})}); } } _cache[c]={v:Store.ver,a}; return a; };
 const novoId = () => Date.now().toString(36)+Math.random().toString(36).slice(2,9);
 function mkDoc(path){ const id=path.slice(path.lastIndexOf('/')+1); return { id, path,
   get:async()=>{ const e=Store.docs[path]; return {id,exists:!!e,data:()=>e?JSON.parse(JSON.stringify(e.d)):undefined}; },
@@ -272,7 +275,8 @@ const LocalDB = { doc:mkDoc, collection:c=>({ doc:id=>mkDoc(c+'/'+(id||novoId())
 function clienteDe(col,d,id){
   d=d||{};
   if(col==='auditoria') return S.me && S.me.clienteId ? S.me.clienteId : null;
-  if(['lancamentos','config','locks'].includes(col)) return null;
+  if(['lancamentos','config','locks','veiculos_fin'].includes(col)) return null;
+  if(S.me && ['gestor','condutor'].includes(S.me.perfil)) return S.me.clienteId;
   if(col==='clientes') return id;
   if(col==='veiculos'){ const c=contratoDoVeiculo(id); return c?c.clienteId:null; }
   if(d.clienteId) return d.clienteId;
@@ -294,7 +298,7 @@ const Anexos = {
 
 
 const DEFAULT_CFG = { alertasKm:[70,85,100], horasCheckin:14, diasProjecao:30, diasAvisoVenc:30, diasAvisoMulta:5, limiteEmergencia:500, carenciaPadrao:0, matriz:{}, planos:[], prev:{pvRevKm:10000,pvRevMeses:12,pvOleoKm:10000,pvOleoMeses:12,pvAlinKm:10000,pvAlinMeses:0}, prevAvisoKm:1000, prevAvisoDias:30 };
-const cfg = () => { const c={...DEFAULT_CFG, ...(G('config','geral')||{})}; delete c.id; return c; };
+const cfg = () => { const c={...DEFAULT_CFG, ...(G('config','geral')||{})}; const pl=G('config','planos'); if(pl) c.planos=pl.lista||[]; delete c.id; return c; };
 
 const CATS = [
   ['preventiva','Preventiva / revisão','cliente'],['oleo','Troca de óleo','cliente'],['alinhamento','Alinhamento e balanceamento','cliente'],['lavagem','Lavagem','cliente'],
@@ -443,7 +447,9 @@ async function salvar(col,id,dados,acao,resumo){
   const body = {...(antes||{}), ...dados, atualizadoEm:new Date().toISOString(), atualizadoPor:S.uid};
   if(!antes){ body.criadoEm=new Date().toISOString(); body.criadoPor=S.uid; }
   delete body.id;
-  await ref.set(limpa(body));
+  if(col==='veiculos'){ const fin={}, pub={}; for(const [k,x] of Object.entries(body)) (FIN_V(k)?fin:pub)[k]=x;
+    if(Object.keys(fin).length) await S.db.collection('veiculos_fin').doc(ref.id).set(limpa(fin)); await ref.set(limpa(pub)); }
+  else await ref.set(limpa(body));
   audit(acao || (antes?'editou':'criou'), col, ref.id, resumo || refLabel(col,{...body,id:ref.id}));
   return ref.id;
 }
@@ -549,7 +555,7 @@ const SCHEMA = {
     {k:'categoria',l:'Categoria do problema',t:'sel',opts:[{v:'',l:'—'}].concat(CATS.map(c=>({v:c[0],l:c[1]})))},{k:'local',l:'Localização'},
     {k:'descricao',l:'Descrição',t:'area',req:1,full:1},{k:'anexo',l:'Foto / vídeo / documento',t:'file',accept:'image/*,video/*,application/pdf',full:1}],
     async save(v,id,antes){
-      const c=contratoDoVeiculo(v.veiculoId); v.clienteId=c?c.clienteId:null; v.contratoId=c?c.id:null;
+      const c=contratoDoVeiculo(v.veiculoId); v.clienteId=c?c.clienteId:(ehCliente()?S.me.clienteId:(antes&&antes.clienteId)||null); v.contratoId=c?c.id:(antes&&antes.contratoId)||null;
       if(!antes){ const r=await Supa.sb.rpc('f2_proximo_chamado'); v.numero = r.error ? Number(String(Date.now()).slice(-6)) : r.data; }
       const hist=(antes&&antes.historico)||[]; if(!antes||antes.status!==v.status) hist.push({ts:new Date().toISOString(),uid:S.uid,status:v.status});
       v.historico=hist; return salvar('chamados',id,v); }},
@@ -876,7 +882,7 @@ function vPainel(al){
   const capital=ativos.reduce((s,v)=>s+(+v.aqPreco||0)+(+v.aqCustos||0),0);
   if(!vs.length) return head('Painel',`Hoje, ${dbr(hoje())}`)+`<div class="card stack"><h2>Comece cadastrando a frota</h2><p class="muted" style="margin:0">O painel mostra frota, alertas, uso e resultado assim que houver veículos, clientes e contratos. Siga a ordem: cliente, veículo, contrato.</p><div class="row">${B('Cadastrar cliente','new','data-k="clientes"',1)}${B('Cadastrar veículo','new','data-k="veiculos"')}</div></div>`;
   const conts=L('contratos').filter(c=>contratoAtivo(c) && c.kmContratado);
-  return head('Painel',`Hoje, ${dbr(hoje())} · competência ${mesbr(m)}`,`${B('Ver como cliente','verComo','')}${B('Check-in','go','data-go="uso"')}${B('Gerar fatura','gerarFatura','',1)}`)+
+  return head('Painel',`Hoje, ${dbr(hoje())} · competência ${mesbr(m)}`,`${B('Check-in','go','data-go="uso"')}${B('Gerar fatura','gerarFatura','',1)}`)+
   `<div class="stack"><div class="kpis">
     <div class="kpi"><span>Frota</span><b>${ativos.length}</b><small>${vs.length-ativos.length} vendido(s)</small></div>
     <div class="kpi"><span>Alugados</span><b>${cnt('alugado')}</b><small>${cnt('disponivel')} disponível(is)</small></div>
@@ -1016,7 +1022,7 @@ function secUsuarios(){
   if(!S.me || S.me.perfil!=='admin') return '';
   const ps=(S.perfis||[]).slice().sort((a,b)=>(a.perfil==='pendente'?0:1)-(b.perfil==='pendente'?0:1)||String(a.nome).localeCompare(String(b.nome)));
   return `<section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Usuários</h3>${B('Atualizar lista','recarregarPerfis','','')}</div>
-  <p class="muted" style="margin:0 0 10px">Cada pessoa cria a própria conta na tela de entrada (Criar conta). Ela aparece aqui como pendente: escolha o perfil, o cliente (para gestor e condutor) e ative. Motoristas também podem ser liberados pelo gestor do cliente, na aba Motoristas do app.</p>
+  <p class="muted" style="margin:0 0 10px">Equipe da F2 cria a conta em <b>/f2</b>, o administrativo do cliente em <b>/cliente</b> e o motorista em <b>/motorista</b> (ou pelo QR code do carro). A conta aparece aqui como pendente: escolha o perfil, o cliente (para gestor e motorista) e ative. Motoristas também podem ser liberados pelo gestor do cliente, na Área do cliente.</p>
   ${tabela([{h:'Nome',f:p=>`<b>${esc(p.nome||'—')}</b>`},{h:'E-mail',f:p=>esc(p.email||'')},{h:'Perfil',f:p=>`<span class="pill ${p.perfil==='pendente'?'p-warn':'p-info'}">${esc(lbl(PERFIS,p.perfil))}</span>`},{h:'Cliente',f:p=>esc(p.cliente_id?nomeCliente(p.cliente_id):'—')},{h:'Ativo',f:p=>p.ativo?'Sim':'<span class="pill p-bad">Não</span>'},{h:'Último acesso',f:p=>dtbr(locISO(p.ultimo_acesso))}],ps,'Nenhum usuário.',p=>`data-act="perfil" data-id="${p.id}"`)}</section>`;
 }
 function openPerfil(id){
@@ -1194,13 +1200,14 @@ document.addEventListener('click', async e=>{
     else if(a==='confirmarCondutor'){ await salvar('multas',id,{condutorConfirmado:el.dataset.nome},'confirmou condutor'); toast('Condutor confirmado.'); }
     else if(a==='estornar'){ const l=G('lancamentos',id); const j=await perguntar('Estornar lançamento',`${esc(l.descricao||'')} · ${money(l.valor)}. Será criado um lançamento inverso. Motivo:`,'Estornar',true); if(j!==null){ await salvar('lancamentos',null,{...l,id:undefined,valor:-(+l.valor),estornoDe:id,descricao:'Estorno: '+j,estornado:false,criadoEm:undefined},'estornou'); await salvar('lancamentos',id,{estornado:true},'marcou estornado'); } }
     else if(a==='novoPlano') openPlano();
-    else if(a==='delPlano'){ const P=cfg(); const planos=P.planos.filter((_,i)=>i!==+el.dataset.i); await salvarCfg({planos}); }
+    else if(a==='delPlano'){ const P=cfg(); const planos=P.planos.filter((_,i)=>i!==+el.dataset.i); await salvarPlanos(planos); }
     else if(a==='backup') await backup();
   }catch(ex){ toast(errMsg(ex)); }
 });
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'){ const al=e.target.closest&&e.target.closest('[data-al]'); if(al) al.click(); } });
 document.addEventListener('change',e=>{ if(e.target.id==='fin_m'){ S.ui.mes=e.target.value||mesAtual(); render(); } if(e.target.id==='ab_m'){ S.ui.mesAb=e.target.value||mesAtual(); render(); } const k=e.target.dataset&&e.target.dataset.pf; if(k && S.p){ S.p.f=S.p.f||{}; S.p.f[k]=e.target.value; render(); } });
 async function salvarCfg(p){ const n={...(G('config','geral')||{}),...p,atualizadoEm:new Date().toISOString(),atualizadoPor:S.uid}; await S.db.doc('config/geral').set(limpa(n)); audit('alterou parâmetros','config','geral',Object.keys(p).join(', ')); toast('Configurações salvas.'); }
+async function salvarPlanos(lista){ await S.db.doc('config/planos').set(limpa({lista,atualizadoEm:new Date().toISOString(),atualizadoPor:S.uid})); const g=G('config','geral'); if(g&&(g.planos||[]).length) await S.db.doc('config/geral').set(limpa({...g,id:undefined,planos:[]})); audit('alterou modelos de plano','config','planos',lista.length+' modelo(s)'); toast('Modelos de plano salvos.'); }
 function bindConfig(){ const imp=$('#cf_imp'); if(imp) imp.onchange=e=>{ const fl=e.target.files[0]; e.target.value=''; if(fl) importar(fl); }; const f=$('#cfgf'); if(!f) return; f.onsubmit=async e=>{ e.preventDefault(); const g=id=>f.querySelector(id).value;
   const matriz={}; CATS.forEach(c=>matriz[c[0]]=f.querySelector('#mz_'+c[0]).value);
   try{ await salvarCfg({alertasKm:g('#c_al').split(',').map(x=>+x.trim()).filter(x=>x>0).sort((a,b)=>a-b),horasCheckin:+g('#c_hc')||14,diasProjecao:+g('#c_dp')||30,diasAvisoVenc:+g('#c_dv')||30,diasAvisoMulta:+g('#c_dm')||5,limiteEmergencia:+g('#c_le')||0,carenciaPadrao:+g('#c_cr')||0,matriz,prev:Object.fromEntries(['pvRevKm','pvRevMeses','pvOleoKm','pvOleoMeses','pvAlinKm','pvAlinMeses'].map(k=>[k,+g('#pv_'+k)||0])),prevAvisoKm:+g('#c_pak')||1000,prevAvisoDias:+g('#c_pad')||30}); }catch(ex){ toast(errMsg(ex)); } }; }
@@ -1213,7 +1220,7 @@ function openPlano(){
   const f=$('#frm'); f.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dlg.close());
   f.onsubmit=async e=>{ e.preventDefault(); const g=id=>f.querySelector(id).value; if(!g('#pl_p')||!g('#pl_k')||!g('#pl_a')) return;
     const planos=(cfg().planos||[]).concat([{nome:g('#pl_n'),prazo:+g('#pl_p'),km:+g('#pl_k'),aluguel:+g('#pl_a'),kmExc:g('#pl_e')?+g('#pl_e'):null,pacotes:g('#pl_pc')}]);
-    try{ await salvarCfg({planos}); dlg.close(); }catch(ex){ toast(errMsg(ex)); } };
+    try{ await salvarPlanos(planos); dlg.close(); }catch(ex){ toast(errMsg(ex)); } };
   dlg.showModal();
 }
 /* ===================== portal do cliente (gestor e condutor) ===================== */
@@ -1227,12 +1234,12 @@ const cidReg = (col,id) => (Store.docs[col+'/'+id]||{}).cid;
 const LC = col => L(col).filter(d => cidReg(col,d.id)===S.me.clienteId);
 function contratosAtivosCli(){ return L('contratos').filter(c=>c.clienteId===S.me.clienteId && contratoAtivo(c)); }
 function contratosCli(){ return L('contratos').filter(c=>c.clienteId===S.me.clienteId).sort((a,b)=>a.inicio<b.inicio?1:-1); }
-function idsVeic(){ return new Set(contratosAtivosCli().map(c=>c.veiculoId)); }
+function idsVeic(){ if(ehCondutor()) return new Set(LC('veiculos').filter(v=>!['vendido'].includes(statusVeiculo(v))).map(v=>v.id)); return new Set(contratosAtivosCli().map(c=>c.veiculoId)); }
 function veicsCli(){ return [...idsVeic()].map(id=>G('veiculos',id)).filter(Boolean).sort((a,b)=>String(a.placa).localeCompare(String(b.placa))); }
 function meuCondutor(){ return S.me.condutorId ? G('condutores',S.me.condutorId) : null; }
 const ehMeu = d => !!d && ((S.me.condutorId && d.condutorId===S.me.condutorId) || d.criadoPor===S.uid);
 function meuUsoAberto(){ if(!S.me.condutorId) return null; return L('usos').find(u=>u.status==='em_uso' && u.condutorId===S.me.condutorId && idsVeic().has(u.veiculoId)) || null; }
-const pillCli = v => statusVeiculo(v)==='alugado' ? '<span class="pill p-ok">Livre</span>' : statusPill(v);
+const pillCli = v => ['alugado','disponivel'].includes(statusVeiculo(v)) ? '<span class="pill p-ok">Livre</span>' : statusPill(v);
 const PL = id => ((G('veiculos',id)||{}).placa||'').toUpperCase();
 
 /* ---------- utilidades de campo: localização, fotos, CSV ---------- */
@@ -1296,7 +1303,7 @@ SCHEMA.abastecimentos={col:'abastecimentos',titulo:'Abastecimento',fields:[
   async save(v,id,antes){
     if(+v.litros<=0) throw 'Informe a quantidade de litros.';
     v.precoLitro = +v.litros>0 ? r2(+v.valor/+v.litros*1000)/1000 : null;
-    const c=contratoDoVeiculo(v.veiculoId,(v.data||hoje()).slice(0,10)); v.contratoId=c?c.id:null; v.clienteId=c?c.clienteId:null;
+    const c=contratoDoVeiculo(v.veiculoId,(v.data||hoje()).slice(0,10)); v.contratoId=c?c.id:(antes&&antes.contratoId)||null; v.clienteId=c?c.clienteId:(ehCliente()?S.me.clienteId:(antes&&antes.clienteId)||null);
     if(!antes){ const mc=ehCondutor()?meuCondutor():null; v.condutorId=mc?mc.id:(v.condutorId||null); v.condutorNome=mc?mc.nome:(v.condutorNome||S.me.nome); }
     const vv=G('veiculos',v.veiculoId); const suspeita = vv ? +v.km<kmAtual(vv) : false;
     const nid=await salvar('abastecimentos',id,v,antes?'editou abastecimento':'registrou abastecimento');
@@ -1325,7 +1332,7 @@ SCHEMA.p_vistoria={col:'vistorias',titulo:'Vistoria com fotos',fixo:1,fields:[{k
   {k:'abrirChamado',l:'Avisar a F2 sobre as avarias (abre um chamado)',t:'bool'}],
   async save(v){ const mc=ehCondutor()?meuCondutor():null; const t=agora(); const c=contratoDoVeiculo(v.veiculoId);
     const nAv=Object.keys(v.checklist||{}).length; const abrir=v.abrirChamado; delete v.abrirChamado;
-    const nid=await salvar('vistorias',null,{...v,tipo:'condutor',data:t,status:'enviada',contratoId:c?c.id:null,clienteId:c?c.clienteId:null,condutorId:mc?mc.id:null,condutorNome:mc?mc.nome:S.me.nome,feitaPeloCliente:true},'enviou vistoria');
+    const nid=await salvar('vistorias',null,{...v,tipo:'condutor',data:t,status:'enviada',contratoId:c?c.id:null,clienteId:c?c.clienteId:(ehCliente()?S.me.clienteId:null),condutorId:mc?mc.id:null,condutorNome:mc?mc.nome:S.me.nome,feitaPeloCliente:true},'enviou vistoria');
     await salvar('leituras',null,{veiculoId:v.veiculoId,km:+v.km,data:t,origem:'vistoria do condutor',status:'informada',horaServidor:true,suspeita:+v.km<kmAtual(G('veiculos',v.veiculoId)),foto:v.fPainel||null,origemId:nid},'registrou km');
     if(abrir && (nAv || v.avarias)) await SCHEMA.chamados.save({tipo:'problema',veiculoId:v.veiculoId,prioridade:'media',status:'aberto',descricao:`[Vistoria] ${Object.keys(v.checklist||{}).join(', ')}${v.avarias?' · '+v.avarias:''}`,anexos:v.fotos||[],abertoPeloCliente:true,origemVistoria:nid},null,null);
     return nid; }};
@@ -1341,6 +1348,14 @@ SCHEMA.p_documento={col:'chamados',titulo:'Enviar documento à F2',fixo:1,fields
   {k:'tipoDoc',l:'Tipo',t:'sel',opts:opt([['nota','Nota fiscal ou recibo'],['laudo','Laudo ou orçamento de oficina'],['bo','Boletim de ocorrência'],['notificacao','Notificação de multa'],['outro','Outro']]),req:1},
   {k:'descricao',l:'Descrição',req:1,full:1},{k:'anexos',l:'Arquivos',t:'files',accept:'image/*,application/pdf',full:1}],
   async save(v){ if(!(v.anexos||[]).length) throw 'Anexe pelo menos um arquivo.'; return SCHEMA.chamados.save({...v,tipo:'documento',prioridade:'baixa',status:'aberto',descricao:`[${lbl([['nota','Nota fiscal'],['laudo','Laudo/orçamento'],['bo','B.O.'],['notificacao','Notificação de multa'],['outro','Documento']],v.tipoDoc)}] ${v.descricao}`,abertoPeloCliente:true},null,null); }};
+const ASSUNTO_M=[['barulho','Barulho estranho'],['painel','Luz acesa no painel'],['pneu','Pneu furado, murcho ou gasto'],['freio','Freio'],['revisao','Revisão ou troca de óleo chegando'],['avaria','Batida ou avaria'],['eletrica','Bateria, parte elétrica ou ar-condicionado'],['outro','Outro']];
+SCHEMA.p_chamado={col:'chamados',titulo:'Chamado de manutenção',fixo:1,fields:[{k:'veiculoId',t:'hidden'},
+  {k:'assunto',l:'O que está acontecendo',t:'sel',opts:opt(ASSUNTO_M),req:1},
+  {k:'podeRodar',l:'O carro pode rodar?',t:'sel',opts:opt([['sim','Sim, está rodando normal'],['cuidado','Roda, mas com cuidado'],['nao','Não, o carro está parado']]),req:1,def:'sim'},
+  {k:'descricao',l:'Conte com suas palavras',t:'area',req:1,full:1},{k:'local',l:'Onde o carro está agora',full:1},
+  {k:'anexos',l:'Fotos, vídeo ou áudio (opcional)',t:'files',accept:'image/*,video/*,audio/*',full:1}],
+  async save(v){ const extra=v.podeRodar==='nao'?' · CARRO PARADO':v.podeRodar==='cuidado'?' · rodando com cuidado':'';
+    return SCHEMA.chamados.save({veiculoId:v.veiculoId,tipo:'manutencao',prioridade:v.podeRodar==='nao'?'alta':'media',status:'aberto',descricao:`[${lbl(ASSUNTO_M,v.assunto)}] ${v.descricao}${extra}`,local:v.local,anexos:v.anexos||[],abertoPeloCliente:true,abertoPorMotorista:true},null,null); }};
 SCHEMA.p_meucadastro={col:'condutores',titulo:'Meu cadastro',fixo:1,fields:[{k:'telefone',l:'Telefone'},{k:'cnh',l:'Nº da CNH'},{k:'cnhValidade',l:'Validade da CNH',t:'date'},{k:'cnhArquivo',l:'Foto da CNH',t:'file',accept:'image/*,application/pdf',full:1}],
   async save(v,id){ return salvar('condutores',id,v,'atualizou cadastro'); }};
 function seguroDoVeiculo(vid){ return L('documentos').filter(d=>d.veiculoId===vid&&d.tipo==='seguro').sort((a,b)=>(a.vencimento||'')<(b.vencimento||'')?1:-1)[0]||null; }
@@ -1361,9 +1376,9 @@ function escolherVeiculo(titulo){ return new Promise(res=>{
   d.querySelectorAll('[data-esc]').forEach(b=>b.onclick=()=>{ fim(b.dataset.esc); d.close(); }); d.querySelector('#askn').onclick=()=>{ fim(null); d.close(); }; d.onclose=()=>fim(null); d.showModal(); }); }
 
 /* ---------- QR code do veículo ---------- */
-function urlQR(vid){ return location.origin + location.pathname.replace(/index\.html$/,'') + '?v=' + encodeURIComponent(vid); }
+function urlQR(vid){ return location.origin + '/motorista?v=' + encodeURIComponent(vid); }
 let _qrLoad=null;
-function carregarQR(){ if(window.qrcode) return Promise.resolve(); if(!_qrLoad) _qrLoad=new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='qrcode.js'; s.onload=()=>res(); s.onerror=()=>{ _qrLoad=null; rej('Não foi possível carregar o gerador de QR code. Verifique a internet.'); }; document.head.appendChild(s); }); return _qrLoad; }
+function carregarQR(){ if(window.qrcode) return Promise.resolve(); if(!_qrLoad) _qrLoad=new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='/qrcode.js'; s.onload=()=>res(); s.onerror=()=>{ _qrLoad=null; rej('Não foi possível carregar o gerador de QR code. Verifique a internet.'); }; document.head.appendChild(s); }); return _qrLoad; }
 async function openQR(vid){
   await carregarQR(); const v=G('veiculos',vid); if(!v) return; const url=urlQR(vid);
   const q=qrcode(0,'M'); q.addData(url); q.make(); const svg=q.createSvgTag({cellSize:8,margin:2,scalable:true,alt:'QR code de check-in do veículo '+(v.placa||'')});
@@ -1405,7 +1420,7 @@ function openCheckin(vid){
   dlg.innerHTML=`<form id="frm" novalidate><div class="dh"><h2>Check-in · ${esc((v.placa||'').toUpperCase())}</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc">${aviso}
     ${ab?`<div class="note" style="margin-bottom:12px">Este veículo está com <b>${esc(nomeCondutor(ab))}</b> desde ${dtbr(ab.inicio)}. Ao confirmar, esse uso será encerrado como <b>encerrado forçado</b> e o gestor é avisado.</div>`:''}
     <div class="fgrid">
-      <div class="fld full"><label for="ci_c">Condutor <span class="req">*</span></label><select id="ci_c">${fixo?'':'<option value="">Selecione…</option>'}${conds.map(d=>`<option value="${esc(d.id)}"${fixo?' selected':''}>${esc(d.nome)}${d.status==='pendente'?' (pendente)':''}</option>`).join('')}${fixo?'':'<option value="__outro">Outro (digitar nome)</option>'}</select>${c?'':'<span class="hint">Veículo sem contrato ativo.</span>'}</div>
+      <div class="fld full"><label for="ci_c">Condutor <span class="req">*</span></label><select id="ci_c">${fixo?'':'<option value="">Selecione…</option>'}${conds.map(d=>`<option value="${esc(d.id)}"${fixo?' selected':''}>${esc(d.nome)}${d.status==='pendente'?' (pendente)':''}</option>`).join('')}${fixo?'':'<option value="__outro">Outro (digitar nome)</option>'}</select>${c||ehCliente()?'':'<span class="hint">Veículo sem contrato ativo.</span>'}</div>
       <div class="fld full" id="ci_on" hidden><label for="ci_n">Nome do condutor</label><input id="ci_n"></div>
       <div class="fld"><label for="ci_km">Km do odômetro agora <span class="req">*</span></label><input id="ci_km" type="number" inputmode="numeric" placeholder="${esc(String(kmAtual(v)))}"><span class="hint">Último registrado: ${kmf(kmAtual(v))}</span></div>
       <div class="fld"><label for="ci_fo">Foto do odômetro</label><input id="ci_fo" type="file" accept="image/*"><span class="hint">Recomendada.</span></div>
@@ -1423,7 +1438,7 @@ function openCheckin(vid){
     if(!sel || (sel==='__outro'&&!nome) || !km){ err.textContent='Informe o condutor e o km do odômetro.'; err.hidden=false; return; }
     const sub=$('#fsub'); sub.disabled=true;
     try{
-      const cid=c?c.clienteId:null;
+      const cid=c?c.clienteId:(ehCliente()?S.me.clienteId:null);
       const fo=await enviarArqs(f.querySelector('#ci_fo'),cid,sub,'foto do odômetro'); const fs=await enviarArqs(f.querySelector('#ci_fs'),cid,sub,'foto');
       sub.textContent='Registrando…'; const loc = comLoc ? await geo : null;
       const abertos=L('usos').filter(u=>u.veiculoId===vid && u.status==='em_uso');
@@ -1467,7 +1482,18 @@ function openCheckout(vid){
 }
 
 /* ---------- avisos do portal ---------- */
+function pAlertasMot(){
+  const A=[]; const P=cfg(); const h=hoje(); const add=(sev,t,d,acao)=>A.push({sev,titulo:t,detalhe:d,acao});
+  const mu=meuUsoAberto();
+  if(mu){ const v=G('veiculos',mu.veiculoId); const pl=PL(mu.veiculoId); const hrs=(new Date(agora())-new Date(mu.inicio))/36e5;
+    if(hrs>P.horasCheckin) add('w',`Você está com ${pl} há ${Math.floor(hrs)} h`,'Se já devolveu o carro, faça o checkout.',{act:'checkout',id:mu.veiculoId,lbl:'Fazer checkout'});
+    if(v) for(const p of preventivas(v).filter(p=>p.st!=='ok')) add(p.st==='vencida'?'w':'i',`${p.nome} ${p.st==='vencida'?'vencida':'chegando'} em ${pl}`,`${p.pk!=null?(p.faltaKm>0?'Faltam '+kmf(p.faltaKm):'Passou '+kmf(-p.faltaKm)):''}${p.pd?' · prazo '+dbr(p.pd):''}. Avise o gestor da sua empresa.`); }
+  const mc=meuCondutor(); if(mc&&mc.cnhValidade&&diff(h,mc.cnhValidade)<=P.diasAvisoVenc) add('w',`Sua CNH ${mc.cnhValidade<h?'está vencida':'vence em '+diff(h,mc.cnhValidade)+' dias'}`,'Atualize em Meu cadastro.',{act:'ptab',tab:'cadastro',lbl:'Meu cadastro'});
+  for(const c of LC('chamados').filter(ehMeu)){ const hs=c.historico||[]; const ult=hs[hs.length-1]; if(ult && hs.length>1 && diff(locISO(ult.ts),h)<=3) add('i',`Chamado #${c.numero}: ${lbl(CH_ST,c.status)}`,(c.respostaF2||c.descricao||'').slice(0,90),{act:'ptab',tab:'registros',lbl:'Ver chamado'}); }
+  const o={b:0,w:1,i:2}; return A.sort((a,b)=>o[a.sev]-o[b.sev]);
+}
 function pAlertas(){
+  if(!ehGestor()) return pAlertasMot();
   const A=[]; const P=cfg(); const h=hoje(); const gestor=ehGestor(); const add=(sev,t,d,acao)=>A.push({sev,titulo:t,detalhe:d,acao});
   const mu=meuUsoAberto();
   for(const c of contratosAtivosCli()){ const v=G('veiculos',c.veiculoId); if(!v) continue; const pl=(v.placa||'').toUpperCase();
@@ -1511,28 +1537,29 @@ function renderPortal(){
   else { S.p.vid=null; h=({inicio:gestor?pInicioG:pInicioC,contratos:pContratos,uso:pUso,abast:pAbast,manut:pManut,chamados:pChamados,faturas:pFaturas,multas:pMultas,condutores:pCondutores,registros:pRegistros,cadastro:pCadastro}[S.p.tab]||pInicioC)(); }
   const sy=window.scrollY;
   $('#main').innerHTML=`${S.preview?`<div class="banner row" style="justify-content:space-between"><span>Você está vendo o app como <b>${esc(lbl(PERFIS,me.perfil))}</b> de <b>${esc(cli?cli.nome:'')}</b>${me.perfil==='condutor'?' ('+esc(me.nome)+')':''}. Ações ficam desativadas.</span><button class="btn sm pri" data-act="sairVerComo">Voltar ao painel F2</button></div>`:''}
-    <header class="ptop"><div class="brand" style="padding:0"><div class="brand-mark">F2</div><div><b>F2 Conect</b><small>${esc(cli?cli.nome:'Cliente')}</small></div></div><div class="row"><span class="sync"></span><span class="muted" style="font-size:13px">${esc(me.nome)}</span>${S.preview?'':'<button class="btn sm" data-act="sair">Sair</button>'}</div></header>
+    <header class="ptop"><div class="brand" style="padding:0"><div class="brand-mark">F2</div><div><b>${esc(ehGestor()?'Área do cliente':'Área do motorista')}</b><small>${esc(cli?cli.nome:'Cliente')}</small></div></div><div class="row"><span class="sync"></span><span class="muted" style="font-size:13px">${esc(me.nome)}</span>${S.preview?'':'<button class="btn sm" data-act="sair">Sair</button>'}</div></header>
     <nav class="ptabs">${tabs.map(([k,l])=>`<button data-act="ptab" data-tab="${k}" aria-selected="${!S.p.vid&&S.p.tab===k}">${l}</button>`).join('')}</nav>${h}`;
   setSync(Supa.estado||'ok'); window.scrollTo(0,sy);
 }
 function qaBtn(act,lbl,sub,extra,cls){ return `<button class="${cls||''}" data-act="${act}" ${extra||''}>${lbl}<small>${sub}</small></button>`; }
 function acoesVeiculo(vid){
   const gestor=ehGestor(); const u=usoAberto(vid); const meu=u&&u.condutorId===S.me.condutorId; const c=contratoDoVeiculo(vid); const d=`data-id="${vid}"`; const qa=[];
-  qa.push(u&&(gestor||meu)?qaBtn('checkout','Checkout','Encerrar o uso',d,'pri'):qaBtn('checkin','Check-in',u?'Assumir o carro agora':'Pegar o carro agora',d,'pri'));
-  qa.push(qaBtn('pform','Abastecimento','Litros, valor e nota',d+' data-k="p_abastecimento"'));
-  qa.push(qaBtn('pform','Informar km','Com foto do odômetro',d+' data-k="p_km"'));
-  qa.push(qaBtn('pform','Vistoria com fotos','Frente, traseira, laterais',d+' data-k="p_vistoria"'));
+  if(!gestor){
+    qa.push(u&&meu?qaBtn('checkout','Checkout','Devolver o carro',d,'pri'):qaBtn('checkin','Check-in',u?'Assumir o carro agora':'Pegar o carro agora',d,'pri'));
+    qa.push(qaBtn('pform','Abastecimento','Litros, valor e nota',d+' data-k="p_abastecimento"'));
+    qa.push(qaBtn('pform','Vistoria com fotos','Frente, traseira, laterais',d+' data-k="p_vistoria"'));
+    qa.push(qaBtn('pform','Chamado de manutenção','Algum problema no carro',d+' data-k="p_chamado"'));
+    return `<div class="qa">${qa.join('')}</div>`;
+  }
   qa.push(qaBtn('pform','Solicitar manutenção','Pedir autorização à F2',d+' data-k="p_manut"'));
-  qa.push(qaBtn('pform','Informar problema','Barulho, luz no painel…',d+' data-k="p_problema"'));
   qa.push(qaBtn('pform','Registrar serviço feito','Óleo, revisão, alinhamento',d+' data-k="p_preventiva"'));
-  qa.push(qaBtn('emerg','Emergência','Pane, guincho, bateria…',d,'sos'));
-  qa.push(qaBtn('seguro','Acionar seguro','Batida, roubo, vidros',d,'sos'));
+  if(c&&c.kmContratado) qa.push(qaBtn('ppacote','Contratar mais km','Pacotes do contrato',`data-id="${c.id}"`));
+  if(c&&c.pdf) qa.push(`<button data-file="${esc(c.pdf)}">Contrato<small>PDF assinado</small></button>`);
+  qa.push(qaBtn('retro','Registrar uso esquecido','Quem dirigiu, com justificativa',d));
   qa.push(qaBtn('pform','Pedir reembolso','Com nota ou recibo',d+' data-k="p_reembolso"'));
   qa.push(qaBtn('pform','Enviar documento','Nota, laudo, B.O.',d+' data-k="p_documento"'));
-  if(gestor){ qa.push(qaBtn('retro','Registrar uso esquecido','Quem dirigiu, com justificativa',d));
-    if(c&&c.kmContratado) qa.push(qaBtn('ppacote','Contratar mais km','Pacotes do contrato',`data-id="${c.id}"`));
-    if(c&&c.pdf) qa.push(`<button data-file="${esc(c.pdf)}">Contrato<small>PDF assinado</small></button>`);
-    qa.push(qaBtn('qr','QR code do carro','Imprimir para o check-in',d)); }
+  qa.push(qaBtn('seguro','Acionar seguro','Batida, roubo, vidros',d,'sos'));
+  qa.push(qaBtn('qr','QR code do carro','Imprimir para os motoristas',d));
   return `<div class="qa">${qa.join('')}</div>`;
 }
 function kpi(t,v,s){ return `<div class="kpi"><span>${t}</span><b>${v}</b>${s?`<small>${s}</small>`:''}</div>`; }
@@ -1549,11 +1576,11 @@ function pInicioG(){
   <section><h3>Frota (${vs.length})</h3>${cs.length?`<div class="vgrid">${cs.map(pCard).join('')}</div>`:'<div class="tw"><div class="empty">Nenhum veículo com contrato ativo.</div></div>'}</section></div>`;
 }
 function pInicioC(){
-  const al=pAlertas(); const mc=meuCondutor(); const mu=meuUsoAberto();
+  const al=pAlertasMot(); const mc=meuCondutor(); const mu=meuUsoAberto();
   const aviso=(mc && mc.status!=='aprovado')?`<div class="note b">Seu cadastro de motorista está ${esc(mc.status)}. Peça ao gestor da sua empresa para liberar.</div>`:'';
   let corpo='';
   if(mu){ const v=G('veiculos',mu.veiculoId);
-    corpo=`<section class="card stack" style="border-color:var(--accent)"><div class="row" style="justify-content:space-between">${placaHTML(v,1)}<span class="pill p-info">Com você</span></div><div><b style="font-size:18px">${esc(v.marca)} ${esc(v.modelo)}</b><br><span class="muted">Desde ${dtbr(mu.inicio)} · saiu com ${kmf(mu.kmInicial)}</span></div>${acoesVeiculo(v.id)}</section>${prevHTML(v,true)}`;
+    corpo=`<section class="card stack" style="border-color:var(--accent)"><div class="row" style="justify-content:space-between">${placaHTML(v,1)}<span class="pill p-info">Com você</span></div><div><b style="font-size:18px">${esc(v.marca)} ${esc(v.modelo)}</b><br><span class="muted">Desde ${dtbr(mu.inicio)} · saiu com ${kmf(mu.kmInicial)}</span></div>${acoesVeiculo(v.id)}</section>`;
   } else { const vs=veicsCli();
     corpo=`<section><h3>Escolha o carro para o check-in</h3><p class="muted" style="margin:0 0 10px">Dica: aponte a câmera do celular para o QR code colado no carro.</p>${vs.length?`<div class="vgrid">${vs.map(v=>{ const u=usoAberto(v.id); const bloq=['manutencao','vendido'].includes(statusVeiculo(v));
       return `<div class="card stack" style="gap:10px"><div class="row" style="justify-content:space-between">${placaHTML(v)}${u?'<span class="pill p-info">Em uso</span>':pillCli(v)}</div><div><b>${esc(v.marca)} ${esc(v.modelo)}</b><br><small class="muted">${u?'Com '+esc(nomeCondutor(u))+' desde '+dtbr(u.inicio):'Livre · '+kmf(kmAtual(v))}</small></div>
@@ -1565,7 +1592,7 @@ function pCard(c){
   return `<div class="card stack" style="gap:10px"><div class="row" style="justify-content:space-between">${placaHTML(v)}${u?'<span class="pill p-info">Em uso</span>':pillCli(v)}</div>
     <div><b>${esc(v.marca)} ${esc(v.modelo)}</b><br><small class="muted">${kmf(kmAtual(v))}${u?' · com '+esc(nomeCondutor(u)):' · livre'}${c.fim?' · contrato até '+dbr(c.fim):''}</small></div>${gestor?kmBarHTML(c):''}
     ${pv.length?`<div class="row">${pv.map(p=>`<span class="pill ${PREV_ST[p.st][0]}">${esc(p.nome)}: ${PREV_ST[p.st][1].toLowerCase()}</span>`).join('')}</div>`:''}
-    <div class="row">${u&&(gestor||meu)?B('Checkout','checkout','data-id="'+v.id+'"',1):B(u?'Assumir o carro':'Check-in','checkin','data-id="'+v.id+'"',!u)}${B('Abrir','pv','data-id="'+v.id+'"')}</div></div>`;
+    <div class="row">${B('Abrir','pv','data-id="'+v.id+'"',1)}</div></div>`;
 }
 const P_VTABS=[['resumo','Resumo'],['contrato','Contrato'],['km','Km'],['uso','Uso'],['abast','Abastecimento'],['manut','Manutenção'],['vist','Vistorias'],['docs','Documentos'],['chamados','Chamados'],['multas','Multas']];
 function vistCard(x, gestor){ return `<div class="card stack" style="gap:8px"><div class="row" style="justify-content:space-between"><b>${esc(VIST_T[x.tipo]||x.tipo)}${x.momento?' · '+esc({retirada:'ao pegar',devolucao:'ao devolver',periodica:'rotina'}[x.momento]||''):''} · ${dtbr(x.data)}</b><span class="pill ${['aceita','revisada'].includes(x.status)?'p-ok':x.status==='contestada'?'p-bad':'p-warn'}">${esc(VIST_ST[x.status]||x.status)}</span></div>
@@ -1578,7 +1605,7 @@ function pVeiculo(vid){
   <div class="row" style="gap:14px;margin-bottom:14px">${placaHTML(v,1)}<div><h1 style="font-size:24px">${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao||'')}</h1><span class="muted">${kmf(kmAtual(v))}${u?' · com '+esc(nomeCondutor(u))+' desde '+dtbr(u.inicio):' · livre'}</span></div></div>`;
   if(!gestor){
     const meusUsos=LC('usos').filter(x=>x.veiculoId===vid&&ehMeu(x)).sort((a,b)=>a.inicio<b.inicio?1:-1).slice(0,10);
-    return cab+`<div class="stack">${acoesVeiculo(vid)}${prevHTML(v,false)}<section><h3>Meus usos neste carro</h3>${tabelaUsosP(meusUsos)}</section></div>`;
+    return cab+`<div class="stack">${acoesVeiculo(vid)}<section><h3>Meus usos neste carro</h3>${tabelaUsosP(meusUsos)}</section></div>`;
   }
   const t=S.p.vtab||'resumo'; let body='';
   if(t==='resumo'){ const al=pAlertas().filter(a=>a.titulo.includes((v.placa||'').toUpperCase()));
@@ -1670,11 +1697,10 @@ function pCondutores(){
 }
 function pRegistros(){
   const us=LC('usos').filter(ehMeu).sort((a,b)=>a.inicio<b.inicio?1:-1).slice(0,30); const as=LC('abastecimentos').filter(ehMeu).sort((a,b)=>a.data<b.data?1:-1).slice(0,30);
-  const vs=LC('vistorias').filter(ehMeu).sort((a,b)=>a.data<b.data?1:-1).slice(0,10); const cs=LC('chamados').filter(ehMeu); const rs=LC('reembolsos').filter(ehMeu).sort((a,b)=>(a.criadoEm||'')<(b.criadoEm||'')?1:-1);
+  const vs=LC('vistorias').filter(ehMeu).sort((a,b)=>a.data<b.data?1:-1).slice(0,10); const cs=LC('chamados').filter(ehMeu);
   return `<h1>Meus registros</h1><p class="sub">Tudo o que você registrou no app.</p><div class="stack" style="margin-top:14px">
   <section><h3>Usos</h3>${tabelaUsosP(us)}</section><section><h3>Abastecimentos</h3>${tabelaAbast(as,true)}</section>
   <section><h3>Chamados</h3>${chamadosLista(cs)}</section>
-  <section><h3>Reembolsos</h3>${tabela([{h:'Data',f:r=>dbr(locISO(r.criadoEm))},{h:'Veículo',f:r=>vCell(r.veiculoId)},{h:'Motivo',f:r=>esc(r.motivo)},{h:'Valor',n:1,f:r=>money(r.valor)},{h:'Situação',f:r=>`<span class="pill ${r.status==='pago'?'p-ok':r.status==='recusado'?'p-bad':'p-warn'}">${esc(lbl(RB_ST,r.status))}</span>`}],rs,'Nenhum reembolso.')}</section>
   <section><h3>Vistorias</h3>${vs.length?`<div class="stack" style="gap:10px">${vs.map(x=>vistCard(x,false)).join('')}</div>`:'<div class="tw"><div class="empty">Nenhuma vistoria.</div></div>'}</section></div>`;
 }
 function pCadastro(){ const d=meuCondutor();
@@ -1696,6 +1722,20 @@ function openPacotePortal(cid){
   dlg.querySelector('[data-close]').onclick=()=>dlg.close(); dlg.showModal();
 }
 
+/* ---------- três portas: /f2, /cliente e /motorista ---------- */
+const PORTA = (location.pathname.match(/^\/(f2|cliente|motorista)(\/|$)/)||[])[1] || null;
+const PORTAS = {f2:{nome:'Painel F2',quem:'equipe da F2 Carloc'},cliente:{nome:'Área do cliente',quem:'administrativo da empresa cliente'},motorista:{nome:'Área do motorista',quem:'motorista'}};
+const portaDoPerfil = p => ['admin','operacional','financeiro'].includes(p)?'f2':p==='gestor'?'cliente':p==='condutor'?'motorista':null;
+function telaPortas(){
+  telaShell(`<h1>F2 Conect</h1><p class="muted" style="margin:0">Escolha a sua área.</p><div class="stack" style="gap:10px">
+    <a class="porta" href="/motorista"><b>Sou motorista</b><small>Check-in e checkout, abastecimento, vistoria por foto e chamado de manutenção.</small></a>
+    <a class="porta" href="/cliente"><b>Sou da empresa cliente</b><small>Administrativo: carros, contratos, km, faturas, multas e motoristas.</small></a>
+    <a class="porta" href="/f2"><b>Sou da F2 Carloc</b><small>Painel interno da locadora.</small></a></div>`);
+}
+function telaPortaErrada(user, porta){
+  telaShell(`<h1>Esta é a ${esc(PORTAS[PORTA].nome)}</h1><p class="muted">Sua conta (${esc(user.email)}) é da <b>${esc(PORTAS[porta].nome)}</b>, para ${esc(PORTAS[porta].quem)}.</p><div class="row"><a class="btn pri" href="/${porta}">Ir para a ${esc(PORTAS[porta].nome)}</a><button class="btn ghost" id="sx">Entrar com outra conta</button></div>`);
+  $('#sx').onclick=sair;
+}
 /* ---------- "Ver como" (equipe F2) ---------- */
 function openVerComo(){
   const cs=L('clientes'); if(!cs.length) return toast('Cadastre um cliente primeiro.');
@@ -1719,7 +1759,7 @@ const ACOES_VER=['ptab','pv','pback','pvtab','sairVerComo','csvUso','csvAbast','
 
 /* ---------- cadastro do motorista pelo QR (conta ainda sem acesso) ---------- */
 function telaCadastroMotorista(user, perfil, vid){
-  telaShell(`<h1>Cadastro de motorista</h1><p class="muted">Você leu o QR code de um carro da F2 Carloc. Preencha seus dados: o gestor da sua empresa confere e libera o acesso ao check-in.</p>
+  telaShell(`<h1>Cadastro de motorista</h1><p class="muted">Você leu o QR code de um carro. Preencha seus dados: o gestor da sua empresa confere e libera o acesso ao check-in.</p>
   <form class="card stack" id="cm"><div class="fld"><label for="cm_n">Nome completo</label><input id="cm_n" required value="${esc(perfil.nome&&perfil.nome!==user.email?perfil.nome:'')}" autocomplete="name"></div>
   <div class="fgrid"><div class="fld"><label for="cm_c">CPF</label><input id="cm_c" required inputmode="numeric"></div><div class="fld"><label for="cm_t">Telefone (WhatsApp)</label><input id="cm_t" required inputmode="tel" autocomplete="tel"></div>
   <div class="fld"><label for="cm_h">Nº da CNH</label><input id="cm_h" required inputmode="numeric"></div><div class="fld"><label for="cm_v">Validade da CNH</label><input id="cm_v" type="date" required></div></div>
@@ -1747,6 +1787,8 @@ async function importar(file){
   const regs=[];
   if(Array.isArray(j.registros)) j.registros.forEach(r=>regs.push([r.colecao,r.id,r.dados]));
   else { if(j.config) regs.push(['config','geral',(({id,...x})=>x)(j.config)]); for(const c of COLS.concat(['auditoria'])) (j[c]||[]).forEach(d=>{ const {id,...x}=d; if(id) regs.push([c,id,x]); }); }
+  { const r2=[]; for(const [c,id,d] of regs){ if(c==='veiculos'){ const fin={},pub={}; for(const [k,x] of Object.entries(d||{})) (FIN_V(k)?fin:pub)[k]=x; r2.push([c,id,pub]); if(Object.keys(fin).length) r2.push(['veiculos_fin',id,fin]); }
+      else if(c==='config' && id==='geral' && (d.planos||[]).length){ r2.push(['config','planos',{lista:d.planos}]); r2.push([c,id,{...d,planos:[]}]); } else r2.push([c,id,d]); } regs.length=0; regs.push(...r2); }
   if(!regs.length){ toast('Nenhum registro encontrado no arquivo.'); return; }
   const ok=await perguntar('Importar backup',`Serão gravados ${regs.length} registros. Os que tiverem o mesmo identificador serão substituídos. Anexos do painel de teste não vêm junto: reenvie os PDFs pelos formulários.`,'Importar');
   if(!ok) return;
@@ -1760,7 +1802,7 @@ async function importar(file){
 
 /* ===================== conexão, login e sessão ===================== */
 function credenciais(){ if(CONF.supabaseUrl && CONF.supabaseAnonKey) return {url:CONF.supabaseUrl,key:CONF.supabaseAnonKey,fixo:true}; try{ return JSON.parse(localStorage.getItem('f2_supabase')||'null'); }catch(e){ return null; } }
-function telaShell(html){ const app=document.querySelector('.app'); app.classList.add('portal','setup'); $('#main').innerHTML=`<div class="setup-box"><div class="brand"><div class="brand-mark">F2</div><div><b>F2 Conect</b><small>F2 Carloc</small></div></div>${html}</div>`; }
+function telaShell(html){ const app=document.querySelector('.app'); app.classList.add('portal','setup'); $('#main').innerHTML=`<div class="setup-box"><div class="brand"><div class="brand-mark">F2</div><div><b>F2 Conect</b><small>${esc(PORTA?PORTAS[PORTA].nome:'F2 Carloc')}</small></div></div>${html}${PORTA?'<p style="margin:4px 0 0"><a class="btn ghost sm" href="/">Trocar de área</a></p>':''}</div>`; }
 async function boot(){
   if(!window.supabase || !window.supabase.createClient){ telaShell('<h1>Sem conexão</h1><p class="muted">Não foi possível carregar a biblioteca do Supabase. Verifique a internet e recarregue a página.</p>'); return; }
   const cr=credenciais(); if(!cr){ telaConexao(); return; }
@@ -1768,6 +1810,10 @@ async function boot(){
   Supa.sb.auth.onAuthStateChange((ev)=>{ if(ev==='PASSWORD_RECOVERY') telaNovaSenha(); });
   if(/type=recovery/.test(location.hash)) return;
   let sess=null; try{ sess=(await Supa.sb.auth.getSession()).data.session; }catch(e){}
+  if(!PORTA){
+    if(qrPendente()){ location.replace('/motorista'); return; }
+    if(sess){ try{ const {data:p}=await Supa.sb.from('perfis').select('perfil,ativo').eq('id',sess.user.id).maybeSingle(); const porta=p&&p.ativo&&portaDoPerfil(p.perfil); if(porta){ location.replace('/'+porta); return; } }catch(e){} }
+    telaPortas(); return; }
   if(!sess){ telaLogin(); return; }
   await iniciarSessao(sess.user);
 }
@@ -1783,15 +1829,15 @@ function telaConexao(msg){
 function telaLogin(modo){
   const cad=modo==='cadastro', rec=modo==='recuperar';
   const qr=qrPendente();
-  telaShell(`${qr&&!rec?'<div class="note i"><b>QR code do carro lido.</b> Entre com sua conta para fazer o check-in. Primeira vez? Toque em <b>Criar conta</b>.</div>':''}<h1>${cad?'Criar conta':rec?'Recuperar senha':'Entrar'}</h1><p class="muted">${cad?(qr?'Depois de criar, você preenche seus dados de motorista e o gestor da sua empresa libera.':'Depois de criar, a F2 ou o gestor da sua empresa libera seu acesso.'):rec?'Enviaremos um link para você criar uma nova senha.':'Use seu e-mail e senha.'}</p>
+  telaShell(`${qr&&!rec?'<div class="note i"><b>QR code do carro lido.</b> Entre com sua conta para fazer o check-in. Primeira vez? Toque em <b>Criar conta</b>.</div>':''}<h1>${cad?'Criar conta':rec?'Recuperar senha':'Entrar'}</h1><p class="muted">${cad?({f2:'Conta para a equipe da F2. Um administrador libera o acesso.',cliente:'Conta para o administrativo da empresa cliente. A F2 libera o acesso.',motorista:qr?'Depois de criar, você preenche seus dados de motorista e o gestor da sua empresa libera.':'Depois de criar, o gestor da sua empresa libera o acesso. Dica: leia o QR code colado no carro.'}[PORTA]):rec?'Enviaremos um link para você criar uma nova senha.':'Use seu e-mail e senha.'}</p>
   <form class="card stack" id="lg">${cad?'<div class="fld"><label for="lg_n">Nome completo</label><input id="lg_n" required autocomplete="name"></div>':''}<div class="fld"><label for="lg_e">E-mail</label><input id="lg_e" type="email" autocomplete="email" required></div>${rec?'':`<div class="fld"><label for="lg_s">Senha</label><input id="lg_s" type="password" autocomplete="${cad?'new-password':'current-password'}" minlength="6" required>${cad?'<span class="hint">Mínimo de 6 caracteres.</span>':''}</div>`}<p class="hint" id="lg_x" hidden style="color:var(--danger)"></p><button class="btn pri" id="lg_b">${cad?'Criar conta':rec?'Enviar link':'Entrar'}</button></form>
   <p class="row"><button class="btn ghost sm" id="lg_t">${cad||rec?'Voltar para entrar':'Criar conta'}</button>${cad||rec?'':'<button class="btn ghost sm" id="lg_r">Esqueci minha senha</button>'}${credenciais()&&!credenciais().fixo?'<button class="btn ghost sm" id="lg_c">Trocar projeto</button>':''}</p>`);
   $('#lg_t').onclick=()=>telaLogin(cad||rec?'':'cadastro'); const r=$('#lg_r'); if(r) r.onclick=()=>telaLogin('recuperar');
   const cc=$('#lg_c'); if(cc) cc.onclick=()=>{ try{ localStorage.removeItem('f2_supabase'); }catch(e){} location.reload(); };
   $('#lg').onsubmit=async e=>{ e.preventDefault(); const x=$('#lg_x'); x.hidden=true; $('#lg_b').disabled=true; const email=$('#lg_e').value.trim();
     let res;
-    if(rec) res=await Supa.sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
-    else if(cad) res=await Supa.sb.auth.signUp({email,password:$('#lg_s').value,options:{data:{nome:$('#lg_n').value.trim()},emailRedirectTo:location.origin+location.pathname}});
+    if(rec) res=await Supa.sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+'/'+(PORTA||'')});
+    else if(cad) res=await Supa.sb.auth.signUp({email,password:$('#lg_s').value,options:{data:{nome:$('#lg_n').value.trim()},emailRedirectTo:location.origin+'/'+(PORTA||'')}});
     else res=await Supa.sb.auth.signInWithPassword({email,password:$('#lg_s').value});
     $('#lg_b').disabled=false;
     if(res.error){ x.textContent=/Invalid login/i.test(res.error.message)?'E-mail ou senha incorretos.':/Email not confirmed/i.test(res.error.message)?'Confirme seu e-mail pelo link enviado antes de entrar.':res.error.message; x.hidden=false; return; }
@@ -1814,8 +1860,13 @@ async function iniciarSessao(user){
   let {data:p,error}=await Supa.sb.from('perfis').select('*').eq('id',user.id).maybeSingle();
   if(error){ telaConexao('O banco não respondeu como esperado: '+error.message+'. Rode o script instalacao.sql.'); return; }
   if(p && !p.ativo && p.perfil==='pendente'){ try{ const r=await Supa.sb.rpc('f2_vincular'); if(r.data){ const r2=await Supa.sb.from('perfis').select('*').eq('id',user.id).maybeSingle(); if(r2.data) p=r2.data; } }catch(e){} }
-  if(p && !p.ativo && qrPendente() && (p.perfil==='pendente' || (p.perfil==='condutor' && !p.cliente_id))){ telaCadastroMotorista(user,p,qrPendente()); return; }
-  if(!p || !p.ativo || p.perfil==='pendente'){ const mot=p&&p.perfil==='condutor'; telaShell(`<h1>${mot?'Cadastro enviado ao gestor':'Acesso aguardando liberação'}</h1><p class="muted">Sua conta (${esc(user.email)}) foi criada. ${mot?'O gestor da sua empresa precisa conferir seus dados e liberar o acesso em Motoristas.':'A F2 (ou o gestor da sua empresa, se você é motorista) precisa liberar o acesso.'} Se você é motorista, também pode ler o QR code colado no carro.</p><div class="row"><button class="btn" id="vn">Verificar de novo</button><button class="btn ghost" id="sx">Sair</button></div>`); $('#vn').onclick=()=>location.reload(); $('#sx').onclick=sair; return; }
+  if(p && !p.ativo && PORTA==='motorista' && qrPendente() && (p.perfil==='pendente' || (p.perfil==='condutor' && !p.cliente_id))){ telaCadastroMotorista(user,p,qrPendente()); return; }
+  if(p && p.ativo && p.perfil!=='pendente'){ const porta=portaDoPerfil(p.perfil); if(porta && porta!==PORTA){ telaPortaErrada(user,porta); return; } }
+  if(!p || !p.ativo || p.perfil==='pendente'){ const mot=p&&p.perfil==='condutor';
+    const txt = mot ? 'O gestor da sua empresa precisa conferir seus dados e liberar o seu acesso.'
+      : PORTA==='motorista' ? 'O gestor da sua empresa precisa liberar o seu acesso. Peça para ele cadastrar você com este e-mail, ou leia o QR code colado no carro.'
+      : PORTA==='cliente' ? 'A F2 Carloc precisa liberar o seu acesso.' : 'Um administrador da F2 precisa liberar o seu acesso.';
+    telaShell(`<h1>${mot?'Cadastro enviado ao gestor':'Acesso aguardando liberação'}</h1><p class="muted">Sua conta (${esc(user.email)}) foi criada. ${txt}</p><div class="row"><button class="btn" id="vn">Verificar de novo</button><button class="btn ghost" id="sx">Sair</button></div>`); $('#vn').onclick=()=>location.reload(); $('#sx').onclick=sair; return; }
   if(['gestor','condutor'].includes(p.perfil) && !p.cliente_id){ telaShell('<h1>Perfil incompleto</h1><p class="muted">Seu usuário ainda não está vinculado a um cliente. Peça à F2 para completar o cadastro.</p><button class="btn" id="sx">Sair</button>'); $('#sx').onclick=sair; return; }
   S.me={id:user.id,email:user.email,nome:p.nome||user.email,perfil:p.perfil,clienteId:p.cliente_id,condutorId:p.condutor_id}; S.uid=user.id;
   telaShell('<h1>Carregando…</h1><p class="muted">Sincronizando os dados.</p>');
