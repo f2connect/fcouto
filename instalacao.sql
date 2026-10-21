@@ -95,19 +95,20 @@ drop policy if exists reg_cliente_ler on public.registros;
 create policy reg_cliente_ler on public.registros for select to authenticated
   using (colecao = 'config'
          or (cliente_id is not null and cliente_id = public.f2_cliente()
-             and colecao not in ('lancamentos','auditoria')));
+             and colecao not in ('lancamentos','auditoria')
+             and not (public.f2_perfil() = 'condutor' and colecao in ('faturas','pacotes'))));
 
 drop policy if exists reg_cliente_inserir on public.registros;
 create policy reg_cliente_inserir on public.registros for insert to authenticated
   with check (cliente_id = public.f2_cliente()
-              and colecao in ('chamados','reembolsos','leituras','usos','pacotes','condutores','manutencoes','auditoria'));
+              and colecao in ('chamados','reembolsos','leituras','usos','pacotes','condutores','manutencoes','auditoria','abastecimentos','vistorias'));
 
 drop policy if exists reg_cliente_alterar on public.registros;
 create policy reg_cliente_alterar on public.registros for update to authenticated
   using (cliente_id = public.f2_cliente()
-         and colecao in ('usos','vistorias','multas','condutores','chamados','reembolsos'))
+         and colecao in ('usos','vistorias','multas','condutores','chamados','reembolsos','abastecimentos'))
   with check (cliente_id = public.f2_cliente()
-         and colecao in ('usos','vistorias','multas','condutores','chamados','reembolsos'));
+         and colecao in ('usos','vistorias','multas','condutores','chamados','reembolsos','abastecimentos'));
 
 -- 6. Tempo real
 do $$ begin
@@ -128,5 +129,122 @@ create policy anexos_cliente_ler on storage.objects for select to authenticated
 drop policy if exists anexos_cliente_enviar on storage.objects;
 create policy anexos_cliente_enviar on storage.objects for insert to authenticated
   with check (bucket_id = 'anexos' and (storage.foldername(name))[1] = 'cliente_' || public.f2_cliente());
+
+-- 8. Versão 2 · hora do servidor no check-in e checkout
+create or replace function public.f2_hora_servidor() returns trigger
+  language plpgsql set search_path = public as
+$$
+declare t text := to_char(now() at time zone 'America/Sao_Paulo', 'YYYY-MM-DD"T"HH24:MI');
+begin
+  if new.colecao = 'usos' then
+    if tg_op = 'INSERT' then
+      if new.dados->>'status' = 'em_uso' and coalesce(new.dados->>'retroativo','false') <> 'true' then
+        new.dados := new.dados || jsonb_build_object('inicio', t, 'inicioServidor', true);
+      end if;
+    else
+      if coalesce(old.dados->>'inicioServidor','false') = 'true' then
+        new.dados := new.dados || jsonb_build_object('inicio', old.dados->'inicio', 'inicioServidor', true);
+      end if;
+      if coalesce(old.dados->>'fimServidor','false') = 'true' then
+        new.dados := new.dados || jsonb_build_object('fim', old.dados->'fim', 'fimServidor', true);
+      elsif old.dados->>'status' = 'em_uso' and new.dados->>'status' in ('encerrado','encerrado_forcado') then
+        new.dados := new.dados || jsonb_build_object('fim', t, 'fimServidor', true);
+      end if;
+    end if;
+  elsif new.colecao = 'leituras' and tg_op = 'INSERT' and coalesce(new.dados->>'horaServidor','false') = 'true' then
+    new.dados := new.dados || jsonb_build_object('data', t);
+  end if;
+  return new;
+end
+$$;
+drop trigger if exists f2_hora on public.registros;
+create trigger f2_hora before insert or update on public.registros
+  for each row execute function public.f2_hora_servidor();
+
+-- 9. Versão 2 · motoristas: vínculo pelo e-mail, cadastro pelo QR do carro e liberação pelo gestor
+drop policy if exists perfis_gestor_ler on public.perfis;
+create policy perfis_gestor_ler on public.perfis for select to authenticated
+  using (public.f2_perfil() = 'gestor' and cliente_id = public.f2_cliente());
+
+-- Conta nova com o mesmo e-mail de um motorista já cadastrado: liga os dois (o acesso só abre quando o gestor liberar)
+create or replace function public.f2_vincular() returns boolean
+  language plpgsql security definer set search_path = public as
+$$
+declare me perfis; c registros;
+begin
+  select * into me from perfis where id = auth.uid();
+  if me.id is null or me.ativo or me.perfil <> 'pendente' or me.email is null then return false; end if;
+  select * into c from registros
+   where colecao = 'condutores' and lower(dados->>'email') = lower(me.email)
+     and coalesce(dados->>'excluido','false') <> 'true' and coalesce(dados->>'status','') <> 'bloqueado'
+   order by atualizado_em desc limit 1;
+  if c.id is null then return false; end if;
+  update perfis set perfil = 'condutor', cliente_id = coalesce(c.cliente_id, c.dados->>'clienteId'), condutor_id = c.id, ativo = false
+   where id = me.id;
+  return true;
+end
+$$;
+
+-- Motorista leu o QR do carro e preencheu os dados: cria o cadastro pendente no cliente que está com o carro
+create or replace function public.f2_cadastro_condutor(p_veiculo text, p_dados jsonb) returns text
+  language plpgsql security definer set search_path = public as
+$$
+declare me perfis; cli text; cid text; hj text := to_char(now() at time zone 'America/Sao_Paulo', 'YYYY-MM-DD');
+begin
+  select * into me from perfis where id = auth.uid();
+  if me.id is null then raise exception 'Sessão inválida. Entre de novo.'; end if;
+  if me.ativo then raise exception 'Seu acesso já está liberado. Recarregue a página.'; end if;
+  if me.perfil not in ('pendente','condutor') then raise exception 'Este perfil não pode fazer cadastro de motorista.'; end if;
+  select coalesce(cliente_id, dados->>'clienteId') into cli from registros
+   where colecao = 'contratos' and dados->>'veiculoId' = p_veiculo
+     and coalesce(dados->>'excluido','false') <> 'true' and coalesce(dados->>'status','ativo') <> 'encerrado'
+     and dados->>'inicio' <= hj and (coalesce(dados->>'fim','') = '' or dados->>'fim' >= hj)
+   order by dados->>'inicio' desc limit 1;
+  if cli is null then raise exception 'Este carro não está com contrato ativo. Fale com o gestor da sua empresa.'; end if;
+  if me.cliente_id is not null and me.cliente_id <> cli then raise exception 'Sua conta já está ligada a outra empresa.'; end if;
+  cid := coalesce(me.condutor_id, 'auto' || substr(md5(me.id::text), 1, 12));
+  insert into registros (colecao, id, dados, cliente_id, atualizado_em, atualizado_por)
+  values ('condutores', cid, jsonb_build_object(
+      'clienteId', cli, 'nome', left(coalesce(nullif(trim(p_dados->>'nome'),''), me.nome), 120),
+      'cpf', left(p_dados->>'cpf', 20), 'telefone', left(p_dados->>'telefone', 30), 'cnh', left(p_dados->>'cnh', 30),
+      'cnhValidade', left(p_dados->>'cnhValidade', 10), 'email', me.email, 'status', 'pendente', 'autoCadastro', true,
+      'usuarioId', me.id, 'consentimentoLGPD', coalesce(p_dados->>'consentimento','') = 'true',
+      'criadoEm', now(), 'criadoPor', me.id, 'atualizadoEm', now(), 'atualizadoPor', me.id), cli, now(), me.id)
+  on conflict (colecao, id) do update
+    set dados = registros.dados || (excluded.dados - 'status' - 'criadoEm' - 'criadoPor'), atualizado_em = now();
+  update perfis set perfil = 'condutor', cliente_id = cli, condutor_id = cid,
+         nome = coalesce(nullif(trim(p_dados->>'nome'),''), nome)
+   where id = me.id;
+  return cid;
+end
+$$;
+
+-- Gestor do cliente (ou a F2) libera ou bloqueia o motorista e o acesso dele ao app
+create or replace function public.f2_aprovar_condutor(p_condutor text, p_aprovar boolean) returns integer
+  language plpgsql security definer set search_path = public as
+$$
+declare c registros; n integer;
+begin
+  select * into c from registros where colecao = 'condutores' and id = p_condutor;
+  if c.id is null then raise exception 'Motorista não encontrado.'; end if;
+  if not (public.f2_equipe() or (public.f2_perfil() = 'gestor' and public.f2_cliente() = c.cliente_id)) then
+    raise exception 'Sem permissão para liberar este motorista.';
+  end if;
+  update registros set dados = dados || jsonb_build_object('status', case when p_aprovar then 'aprovado' else 'bloqueado' end,
+           'atualizadoEm', now(), 'atualizadoPor', auth.uid(), 'liberadoPor', case when p_aprovar then auth.uid() end),
+         atualizado_em = now(), atualizado_por = auth.uid()
+   where colecao = 'condutores' and id = p_condutor;
+  update perfis set perfil = 'condutor', cliente_id = c.cliente_id, condutor_id = p_condutor, ativo = p_aprovar
+   where perfil in ('pendente','condutor')
+     and (condutor_id = p_condutor
+          or (condutor_id is null and lower(email) = lower(c.dados->>'email') and (cliente_id is null or cliente_id = c.cliente_id)));
+  get diagnostics n = row_count;
+  return n;
+end
+$$;
+
+revoke execute on function public.f2_vincular() from anon;
+revoke execute on function public.f2_cadastro_condutor(text, jsonb) from anon;
+revoke execute on function public.f2_aprovar_condutor(text, boolean) from anon;
 
 -- Fim. Depois: Authentication → URL Configuration → Site URL = endereço do site no Vercel.
