@@ -53,6 +53,16 @@ Sem isso, os links de confirmação e de "Esqueci minha senha" não voltam para 
 
 Abra o site no celular e use **Adicionar à tela inicial** (Safari ou Chrome). Ele abre como app.
 
+## Menu da Área da F2 (versão 4)
+
+- **Painel:** resumo de tudo: clientes ativos, frota, aluguel mensal, total a receber até o fim dos contratos (estimado), faturas em aberto, receita, custo fixo, custo variável e resultado do mês, gráfico dos últimos 6 meses e pendências.
+- **Clientes:** os clientes com contrato ativo. Dentro de cada um: resumo com os carros do contrato, contratos (e pedidos de km), motoristas, faturas e chamados.
+- **Veículos:** busca por placa, modelo, cliente ou situação. Dentro de cada carro: contrato, uso e check-in, quilometragem, abastecimento, vistorias, manutenções, chamados e reembolsos, documentos e seguros, multas, financeiro e histórico.
+- **Financeiro:** contratos a receber (faturas), contas fixas, contas variáveis e resultado. Cada conta tem um **centro de custo**: a placa do carro ou **Administrativo**. O tipo (fixa ou variável) é escolhido em cada conta.
+- **Contas fixas recorrentes:** cadastradas uma vez (valor e dia do vencimento) e geradas sozinhas todo mês. É só marcar como paga.
+- Manutenção paga pela F2, documento pago (IPVA, seguro, licenciamento) e reembolso pago viram uma conta no centro de custo do carro automaticamente.
+- **Resultado:** por centro de custo, com receita das faturas emitidas e custos das contas do mês (pagas ou a pagar). O caixa operacional mostra só o que foi recebido e pago; compra de veículos aparece à parte.
+
 ## Três áreas separadas (versão 3)
 
 | Endereço | Quem usa | O que tem |
