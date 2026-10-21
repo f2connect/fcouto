@@ -2,13 +2,18 @@
   "name": "F2 Conect",
   "short_name": "F2 Conect",
   "description": "Gestão de frota da F2 Carloc: veículos, contratos, check-in, km, manutenção e faturas.",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#f2f4f3",
   "theme_color": "#0b6a4c",
   "lang": "pt-BR",
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ]
 }
