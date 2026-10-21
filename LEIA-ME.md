@@ -5,7 +5,8 @@ Pasta pronta para publicar. O sistema é um site estático (Vercel) que guarda t
 | Arquivo | Para que serve |
 | --- | --- |
 | `index.html` | O sistema inteiro: painel da F2 e portal do cliente (gestor e condutor) |
-| `config.js` | Onde você cola a URL e a chave pública do Supabase |
+| `config.js` e `api/config.js` | Leem a URL e a chave pública do Supabase, que a integração Supabase ↔ Vercel preenche sozinha |
+| `qrcode.js` | Gera o QR code de check-in de cada carro (biblioteca qrcode-generator, licença MIT) |
 | `instalacao.sql` | Cria tabelas, regras de acesso, tempo real e a pasta de anexos no Supabase |
 | `manifest.webmanifest`, `icon.svg` | Permitem instalar o site como app no celular |
 | `vercel.json` | Cabeçalhos de segurança e cache para o Vercel |
@@ -52,6 +53,16 @@ Sem isso, os links de confirmação e de "Esqueci minha senha" não voltam para 
 
 Abra o site no celular e use **Adicionar à tela inicial** (Safari ou Chrome). Ele abre como app.
 
+## Área do motorista e QR code (versão 2)
+
+- Em cada veículo, no painel da F2 (ou na janela do veículo do gestor), o botão **QR code** abre o código para imprimir e colar no carro.
+- O motorista aponta a câmera: se já tem conta, cai direto no check-in daquele carro; se não tem, cria a conta, preenche CPF, telefone e CNH, e o pedido vai para o **gestor do cliente**, que libera na aba **Motoristas**.
+- Check-in e checkout registram km, foto do odômetro, fotos do carro, observação e localização (só naquele momento). A data e a hora vêm do servidor.
+- O motorista também registra abastecimento (litros, valor, nota), vistoria com fotos (frente, traseira, laterais, painel), manutenção, problema, emergência, sinistro, reembolso e documentos.
+- Manutenção preventiva: intervalos padrão em **Configurações**, ajustáveis por veículo. O app avisa quando está chegando e quando venceu.
+- A F2 pode usar **Ver como cliente** no Painel para ver o app exatamente como o gestor ou o motorista, sem gravar nada.
+- Ao atualizar uma instalação antiga, rode o `instalacao.sql` de novo no SQL Editor: ele só acrescenta o que falta.
+
 ## Perfis
 
 | Perfil | Vê e faz |
@@ -59,14 +70,13 @@ Abra o site no celular e use **Adicionar à tela inicial** (Safari ou Chrome). E
 | Administrador F2 | Tudo, inclusive configurações, usuários e auditoria |
 | Operacional F2 | Frota, contratos, uso, vistorias, manutenção, multas, documentos |
 | Financeiro F2 | Faturas, resultado, lançamentos, reembolsos |
-| Gestor do cliente | Os veículos da própria empresa, contratos, km, faturas, multas, condutores, chamados |
-| Condutor | Check-in/checkout, emergência, problema, km e reembolso dos carros da empresa |
+| Gestor do cliente | Os veículos da própria empresa, contratos e franquias, uso, abastecimento, manutenção, faturas, multas, chamados, e libera os motoristas |
+| Motorista (condutor) | Check-in/checkout, abastecimento, vistoria com fotos, km, manutenção, emergência, seguro e reembolso; não vê faturas |
 
 O isolamento entre clientes é feito pelas regras do banco (Row Level Security): um cliente não consegue ler dados de outro nem chamando a API diretamente. Lançamentos financeiros internos e a auditoria nunca chegam ao cliente.
 
 ## Limites conhecidos desta versão
 
-- O horário de check-in vem do aparelho de quem registra.
 - O e-mail padrão do Supabase tem limite baixo de envios por hora. Para uso real, configure um SMTP próprio em **Authentication → Emails**.
 - O plano gratuito do Supabase tem limites de uso e pode pausar projetos inativos. Confira em supabase.com/pricing antes de colocar em produção.
 - Notificações chegam como avisos dentro do sistema. E-mail e WhatsApp automáticos ficam para a etapa 2.
