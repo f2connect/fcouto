@@ -1724,7 +1724,7 @@ function openPacotePortal(cid){
 
 /* ---------- três portas: /f2, /cliente e /motorista ---------- */
 const PORTA = (location.pathname.match(/^\/(f2|cliente|motorista)(\/|$)/)||[])[1] || null;
-const PORTAS = {f2:{nome:'Painel F2',quem:'equipe da F2 Carloc'},cliente:{nome:'Área do cliente',quem:'administrativo da empresa cliente'},motorista:{nome:'Área do motorista',quem:'motorista'}};
+const PORTAS = {f2:{nome:'Área da F2',quem:'equipe da F2 Carloc'},cliente:{nome:'Área do cliente',quem:'administrativo da empresa cliente'},motorista:{nome:'Área do motorista',quem:'motorista'}};
 const portaDoPerfil = p => ['admin','operacional','financeiro'].includes(p)?'f2':p==='gestor'?'cliente':p==='condutor'?'motorista':null;
 function telaPortas(){
   telaShell(`<h1>F2 Conect</h1><p class="muted" style="margin:0">Escolha a sua área.</p><div class="stack" style="gap:10px">
