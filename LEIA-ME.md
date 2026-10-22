@@ -8,7 +8,7 @@ Pasta pronta para publicar. O sistema é um site estático (Vercel) que guarda t
 | `api/agente.js` | O assistente de chat: confere quem está logado e conversa com o Claude (Anthropic). A chave fica só na Vercel |
 | `config.js` e `api/config.js` | Leem a URL e a chave pública do Supabase, que a integração Supabase ↔ Vercel preenche sozinha |
 | `qrcode.js` | Gera o QR code de check-in de cada carro (biblioteca qrcode-generator, licença MIT) |
-| `instalacao.sql` | Cria tabelas, regras de acesso, tempo real e a pasta de anexos no Supabase |
+| `instalacao.sql` | Cria tabelas, regras de acesso, tempo real e a pasta de anexos no Supabase (a versão 6 acrescenta o item 10: sugestões de melhoria do cliente) |
 | `manifest.webmanifest`, `icon.svg` | Permitem instalar o site como app no celular |
 | `vercel.json` | Cabeçalhos de segurança e cache para o Vercel |
 
@@ -54,12 +54,14 @@ Sem isso, os links de confirmação e de "Esqueci minha senha" não voltam para 
 
 Abra o site no celular e use **Adicionar à tela inicial** (Safari ou Chrome). Ele abre como app.
 
-## Assistente de chat (versão 5)
+## Assistente de chat (versões 5 e 6)
 
 Botão **Assistente** no canto da tela, na Área da F2 e na Área do cliente (administrativo do cliente). O motorista não vê o assistente.
 
-- Responde perguntas com os números do próprio sistema: resumo do mês, resultado por carro, fluxo de caixa, franquia de km, combustível, pendências, contas em aberto.
-- Lança coisas por mensagem ("lança R$ 350 de pneu no RTA1B23", "abre um chamado para o HB20", "cadastra o motorista João"). Ele **nunca grava sozinho**: mostra um cartão com o que entendeu e, ao clicar em **Conferir e salvar**, abre o formulário já preenchido. Só salva quando você clicar em Salvar. Para pagar uma conta, pede confirmação no próprio cartão.
+- **Conhece o sistema inteiro:** explica qualquer tela ou regra (fatura, franquia de km, centro de custo, recorrências, check-in, perfis) e responde com os números do próprio sistema.
+- **Faz pelo chat o que as telas fazem:** lança contas, abastecimentos, manutenções, chamados, multas, documentos, motoristas, clientes, veículos e contratos; altera registros (situação de chamado, aprovar reembolso, encerrar contrato, corrigir valor); exclui com motivo; paga contas; registra recebimento e cancela faturas; aprova ou recusa km adicional; libera ou bloqueia motoristas; verifica leituras e vistorias; abre check-in, checkout, uso esquecido, QR code e emissão de fatura.
+- **Confirmação com um clique:** ele mostra um cartão com o que vai fazer e só grava quando você clica em **Confirmar**. O botão **Abrir formulário** permite revisar antes. Quando precisa de foto ou nota fiscal, ele abre o formulário já preenchido para você anexar.
+- **Melhorias:** durante as conversas, o assistente anota sozinho sugestões para melhorar o sistema (algo que ele não consegue fazer, um processo repetido à mão, um dado que falta, um erro). Elas ficam em **Sistema → Melhorias**, com prioridade e situação. Aprove as que valem a pena e use **Copiar lista para o Claude** para me mandar e eu implementar.
 - Vê apenas o que o usuário já vê nas telas. O administrativo do cliente só consulta a frota da empresa dele; o perfil operacional não acessa o financeiro.
 
 ### Ligar o assistente (uma vez)

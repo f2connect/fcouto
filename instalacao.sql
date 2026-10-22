@@ -261,4 +261,11 @@ revoke execute on function public.f2_vincular() from anon;
 revoke execute on function public.f2_cadastro_condutor(text, jsonb) from anon;
 revoke execute on function public.f2_aprovar_condutor(text, boolean) from anon;
 
+-- 10. Versão 6 · o administrativo do cliente também pode registrar sugestões de melhoria (pelo assistente)
+drop policy if exists reg_cliente_inserir on public.registros;
+create policy reg_cliente_inserir on public.registros for insert to authenticated
+  with check (cliente_id = public.f2_cliente() and (
+    (public.f2_perfil() = 'gestor' and colecao in ('chamados','reembolsos','leituras','usos','pacotes','condutores','manutencoes','auditoria','abastecimentos','vistorias','melhorias'))
+    or (public.f2_perfil() = 'condutor' and colecao in ('chamados','leituras','usos','auditoria','abastecimentos','vistorias'))));
+
 -- Fim. Depois: Authentication → URL Configuration → Site URL = endereço do site no Vercel.

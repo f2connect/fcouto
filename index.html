@@ -213,6 +213,7 @@ details summary{cursor:pointer}
 .agm.ag ul{margin:4px 0;padding-left:18px}.agm.ag li{margin:2px 0}.agm.ag code{font-family:var(--f-mono);font-size:13px}
 .agm.ag .agtr{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:8px;border-bottom:1px solid var(--line);padding:2px 0;font-size:13.5px}
 .agm.sis{align-self:flex-start;background:none;color:var(--muted);font-size:13px;padding:2px 4px}
+.agm.mel{align-self:flex-start;background:var(--warn-bg);color:var(--fg);font-size:13.5px;border-radius:8px}
 .agm.erro{align-self:stretch;background:var(--danger-bg);color:var(--danger);max-width:none}
 .agpensa i{display:inline-block;width:7px;height:7px;margin-right:4px;border-radius:50%;background:var(--muted);animation:agp 1s infinite ease-in-out}
 .agpensa i:nth-child(2){animation-delay:.15s}.agpensa i:nth-child(3){animation-delay:.3s}
@@ -874,14 +875,14 @@ function openGerarFatura(contratoId){
   };
   draw(contratoId||'', comp0, []); dlg.showModal();
 }
-async function baixarFatura(id){
-  const f=G('faturas',id); const dt=await perguntar('Registrar pagamento',`Fatura ${esc(mesbr(f.competencia))} · ${money(f.total)}. Data do recebimento:`,'Registrar pagamento','date'); if(dt===null) return;
+async function baixarFatura(id,dtA){
+  const f=G('faturas',id); const dt=dtA||await perguntar('Registrar pagamento',`Fatura ${esc(mesbr(f.competencia))} · ${money(f.total)}. Data do recebimento:`,'Registrar pagamento','date'); if(dt===null) return;
   try{ await salvar('faturas',id,{status:'paga',pagoEm:dt},'baixou fatura');
     await syncLanc('faturas',id,f.itens.filter(i=>+i.valor).map(i=>({veiculoId:f.veiculoId,tipo:i.natureza==='repasse'?'repasse':'receita',categoria:{aluguel:'Aluguel',desconto:'Desconto dias parados',pacote:'Pacote de km',excedente:'Km excedente',multa:'Repasse de multa',avaria:'Avaria cobrada',ajuste:'Ajuste de fatura'}[i.tipo]||i.tipo,descricao:i.desc,valor:+i.valor,competencia:f.competencia+'-01',dataCaixa:dt})));
     toast('Pagamento registrado e receitas lançadas.'); }catch(e){ toast(errMsg(e)); }
 }
-async function cancelarFatura(id){
-  const f=G('faturas',id); const mot=await perguntar('Cancelar fatura','A fatura fica no histórico como cancelada. Itens vinculados (pacotes, multas, avarias) voltam a ficar disponíveis. Motivo:','Cancelar fatura',true); if(mot===null) return;
+async function cancelarFatura(id,motA){
+  const f=G('faturas',id); const mot=motA||await perguntar('Cancelar fatura','A fatura fica no histórico como cancelada. Itens vinculados (pacotes, multas, avarias) voltam a ficar disponíveis. Motivo:','Cancelar fatura',true); if(mot===null) return;
   try{ await salvar('faturas',id,{status:'cancelada',motivoCancelamento:mot},'cancelou fatura'); await syncLanc('faturas',id,[]);
     for(const i of (f.itens||[]).filter(i=>i.refCol)){ if(i.refCol==='pacotes') await salvar('pacotes',i.refId,{status:'aprovado',faturaId:null},'liberou pacote'); if(i.refCol==='multas') await salvar('multas',i.refId,{statusRepasse:'a_repassar',faturaId:null},'liberou multa'); if(i.refCol==='manutencoes'&&i.tipo==='avaria') await salvar('manutencoes',i.refId,{faturaId:null},'liberou avaria'); }
     toast('Fatura cancelada.'); }catch(e){ toast(errMsg(e)); }
@@ -903,8 +904,8 @@ const vCell = id => { const v=G('veiculos',id); return v? placaHTML(v) : '—'; 
 const NAV = [
   ['grp','Operação'],['painel','Painel'],['clientes','Clientes'],['veiculos','Veículos'],
   ['grp','Financeiro'],['receber','Contratos a receber'],['fixas','Contas fixas'],['variaveis','Contas variáveis'],['resultado','Resultado'],
-  ['grp','Sistema'],['config','Configurações'],['auditoria','Auditoria']];
-const PERM={admin:'*',operacional:['painel','clientes','cliente','veiculos','veiculo'],financeiro:['painel','clientes','cliente','veiculos','veiculo','receber','fixas','variaveis','resultado']};
+  ['grp','Sistema'],['config','Configurações'],['melhorias','Melhorias'],['auditoria','Auditoria']];
+const PERM={admin:'*',operacional:['painel','clientes','cliente','veiculos','veiculo','melhorias'],financeiro:['painel','clientes','cliente','veiculos','veiculo','receber','fixas','variaveis','resultado','melhorias']};
 const pode = v => !!S.me && (PERM[S.me.perfil]==='*' || (PERM[S.me.perfil]||[]).includes(v));
 function renderNav(al){
   const cur = S.route.view==='veiculo'?'veiculos':S.route.view==='cliente'?'clientes':S.route.view;
@@ -1555,7 +1556,7 @@ function agResolver(key, campos){
     else v=String(v).slice(0,2000);
     pre[f.k]=v; }
   if(ehCliente() && key.startsWith('p_') && sc.fields.some(f=>f.k==='veiculoId') && !(pre.veiculoId && idsVeic().has(pre.veiculoId))) avisos.push('Informe um veículo do seu contrato.');
-  const tmp={...pre}; const falta=sc.fields.filter(f=>f.req && f.k && !f.sec && !(f.show&&!f.show(tmp)) && !['file','files','checklist'].includes(f.t) && (tmp[f.k]==null||tmp[f.k]==='') && f.def==null && !f.defFn).map(f=>f.l||f.k);
+  const tmp=agValsBase(key,pre); const falta=sc.fields.filter(f=>f.req && f.k && !f.sec && !(f.show&&!f.show(tmp)) && !['file','files','checklist'].includes(f.t) && (tmp[f.k]==null||tmp[f.k]==='')).map(f=>f.l||f.k);
   return {pre,avisos,falta};
 }
 function agValorTxt(f,v){ if(f.k==='centro') return centroLbl(v); if(f.t==='ref'||f.k==='veiculoId') return f.ref==='clientes'?nomeCliente(v):f.ref==='contratos'?refLabel('contratos',G('contratos',v)||{}):vLbl(G('veiculos',v));
@@ -1575,9 +1576,16 @@ function agTools(){
       input_schema:{type:'object',properties:{tela:{type:'string',enum:ehGestor()?['inicio','contratos','uso','abast','manut','chamados','faturas','multas','condutores','veiculo']:['painel','clientes','cliente','veiculos','veiculo','receber','fixas','variaveis','resultado','config','auditoria'].filter(v=>['cliente','veiculo'].includes(v)||pode(v))},veiculo:{type:'string',description:'placa, para tela veiculo'},cliente:{type:'string',description:'nome, para tela cliente'},aba:{type:'string',description:'para veiculo: resumo|contrato|uso|km|abast|vist|manut|chamados|docs|multas|fin|historico; para painel: geral|rentab|caixa|clientes'}},required:['tela']}},
     {name:'preparar_registro',description:'Prepara um formulário já preenchido para a pessoa conferir e salvar. NUNCA grava sozinho. Tipos: '+forms.map(k=>`${k} = ${agForms()[k]}`).join('; ')+'. Campos de cada tipo estão no contexto.',
       input_schema:{type:'object',properties:{tipo:{type:'string',enum:forms},campos:{type:'object',description:'chave do campo → valor'},resumo:{type:'string',description:'uma frase dizendo o que será lançado'}},required:['tipo','campos','resumo']}}];
-  if(agFin()){ t.push({name:'pagar_conta',description:'Pede confirmação para marcar uma conta a pagar como paga. Descubra o id com consultar_dados (colecao contas, status aberta).',input_schema:{type:'object',properties:{conta_id:{type:'string'},data_pagamento:{type:'string',description:'AAAA-MM-DD; vazio = hoje'}},required:['conta_id']}});
-    t.push({name:'gerar_fatura',description:'Abre a tela de emissão de fatura de um contrato, com a proposta calculada pelo sistema, para a pessoa conferir e emitir.',input_schema:{type:'object',properties:{veiculo:{type:'string',description:'placa do carro do contrato'}},required:['veiculo']}}); }
-  if(ehGestor()) t.push({name:'pedir_km_adicional',description:'Abre os pacotes de km adicional do contrato de um carro para a pessoa escolher e pedir.',input_schema:{type:'object',properties:{veiculo:{type:'string'}},required:['veiculo']}});
+  if(agFin()) t.push({name:'pagar_conta',description:'Marca uma conta a pagar como paga (a pessoa confirma com um clique). Descubra o id com consultar_dados (colecao contas, status aberta).',input_schema:{type:'object',properties:{conta_id:{type:'string'},data_pagamento:{type:'string',description:'AAAA-MM-DD; vazio = hoje'}},required:['conta_id']}});
+  const eds=Object.keys(agEditaveis());
+  if(eds.length) t.push({name:'alterar_registro',description:'Altera um registro que já existe (ex.: mudar a situação de um chamado, aprovar um reembolso, encerrar um contrato, corrigir um valor, pausar uma conta recorrente, mudar a situação de um carro). Pegue o id com consultar_dados. Use os mesmos campos do formulário daquele tipo. A pessoa confirma com um clique.',
+    input_schema:{type:'object',properties:{colecao:{type:'string',enum:eds},id:{type:'string'},campos:{type:'object',description:'só os campos que mudam'},resumo:{type:'string'}},required:['colecao','id','campos','resumo']}});
+  if(ehEquipe()) t.push({name:'excluir_registro',description:'Exclui um registro (fica no histórico e na auditoria). Só quando a pessoa pedir claramente. Precisa de motivo.',input_schema:{type:'object',properties:{colecao:{type:'string',enum:eds},id:{type:'string'},motivo:{type:'string'}},required:['colecao','id','motivo']}});
+  const acs=Object.keys(agAcoes());
+  t.push({name:'acao_sistema',description:'Faz uma ação dos botões do sistema. '+acs.map(k=>`${k}: ${agAcoes()[k].d}`).join('; ')+'. Ações com "abre" mostram a tela própria (fotos, km); as outras a pessoa confirma com um clique.',
+    input_schema:{type:'object',properties:{acao:{type:'string',enum:acs},id:{type:'string',description:'id do registro, quando a ação pede'},veiculo:{type:'string',description:'placa, quando a ação pede'},data:{type:'string',description:'AAAA-MM-DD'},texto:{type:'string',description:'motivo ou nome, quando a ação pede'}},required:['acao']}});
+  t.push({name:'sugerir_melhoria',description:'Anota uma sugestão de melhoria do sistema na lista Melhorias, sem pedir confirmação. Use sempre que perceber algo que o sistema não faz, um processo manual repetido, um dado faltando, algo confuso ou um erro, ou quando a pessoa pedir.',
+    input_schema:{type:'object',properties:{titulo:{type:'string',description:'curto, até 12 palavras'},descricao:{type:'string',description:'o que mudar e como funcionaria'},motivo:{type:'string',description:'o problema ou o ganho para a F2'},prioridade:{type:'string',enum:['alta','media','baixa']},area:{type:'string',enum:MEL_AREAS.map(x=>x[0])}},required:['titulo','descricao','prioridade','area']}});
   return t;
 }
 function agContexto(){
@@ -1589,7 +1597,8 @@ function agContexto(){
     g ? 'Esta pessoa é o administrativo de um CLIENTE da F2. Ela só vê a frota, os contratos e as faturas da empresa dela. Não fale de custos, margens ou dados internos da F2.' : agFin() ? 'Esta pessoa é da equipe da F2 com acesso ao financeiro.' : 'Esta pessoa é da equipe operacional da F2 e não tem acesso ao financeiro (contas, faturas, resultado).',
     `Veículos (placa | modelo | situação | km${g?'':' | cliente'} | contrato):\n`+(linhasV.join('\n')||'nenhum'),
     g ? `Motoristas: ${LC('condutores').map(d=>d.nome+(d.status!=='aprovado'?' ('+d.status+')':'')).join(', ')||'nenhum'}` : `Clientes: ${L('clientes').map(c=>c.nome).join('; ')||'nenhum'}`,
-    'Campos dos formulários (preparar_registro):\n'+Object.keys(forms).map(k=>`- ${k}: ${agCamposDesc(k)}`).join('\n')
+    'Sugestões de melhoria já anotadas (não repita):\n'+(L('melhorias').filter(m=>!['feita','descartada'].includes(m.status)).slice(-40).map(m=>'- '+m.titulo).join('\n')||'nenhuma'),
+    'Campos dos formulários (preparar_registro e alterar_registro):\n'+[...new Set(Object.keys(forms).concat(Object.values(agEditaveis())))].map(k=>`- ${k}: ${agCamposDesc(k)}`).join('\n')
   ].join('\n\n').slice(0,38000);
 }
 async function agExec(u){
@@ -1602,13 +1611,19 @@ async function agExec(u){
     if(a.tela==='cliente'){ const c=agCli(a.cliente); if(!c) return {erro:'Cliente não encontrado'}; go('cliente',c.id,a.aba); return {ok:true}; }
     if(!pode(a.tela)) return {erro:'Tela não disponível'}; if(a.tela==='painel'&&a.aba) S.ui.ptab=a.aba; go(a.tela); return {ok:true}; }
   if(u.name==='preparar_registro'){ const key=a.tipo; if(!agForms()[key]||!SCHEMA[key]) return {erro:'Tipo de registro não permitido: '+key};
-    const r=agResolver(key,a.campos); agCard({tipo:'form',key,pre:r.pre,resumo:a.resumo,avisos:r.avisos,falta:r.falta});
-    return {ok:true,situacao:'Formulário mostrado para a pessoa conferir. Ainda NÃO foi salvo: só será salvo quando ela clicar em Salvar.',camposAceitos:Object.keys(r.pre),avisos:r.avisos,faltaPreencher:r.falta}; }
-  if(u.name==='pagar_conta'){ if(!agFin()) return {erro:'Sem permissão'}; const c=G('contas',a.conta_id); if(!c||c.excluido) return {erro:'Conta não encontrada'}; if(c.status!=='aberta') return {erro:'Esta conta não está em aberto (situação: '+c.status+').'};
-    agCard({tipo:'pagar',id:c.id,data:(a.data_pagamento||hoje()).slice(0,10)}); return {ok:true,situacao:'Pedido de confirmação mostrado. Ainda NÃO foi pago no sistema.'}; }
-  if(u.name==='gerar_fatura'){ if(!agFin()) return {erro:'Sem permissão'}; const v=agVeic(a.veiculo); const c=v&&L('contratos').filter(x=>x.veiculoId===v.id&&x.status!=='encerrado').sort((x,y)=>x.inicio<y.inicio?1:-1)[0]; if(!c) return {erro:'Contrato não encontrado para '+a.veiculo};
-    agCard({tipo:'fatura',id:c.id}); return {ok:true,situacao:'Botão para abrir a emissão mostrado. A fatura só é emitida quando a pessoa confirmar.'}; }
-  if(u.name==='pedir_km_adicional'){ const v=agVeic(a.veiculo); const c=v&&contratoDoVeiculo(v.id); if(!c||c.clienteId!==S.me.clienteId) return {erro:'Contrato ativo não encontrado para '+a.veiculo}; agCard({tipo:'pacote',id:c.id}); return {ok:true,situacao:'Botão mostrado; a pessoa escolhe o pacote.'}; }
+    const r=agResolver(key,a.campos); const direto=agPodeDireto(key,r.pre)&&!r.falta.length&&!r.avisos.length;
+    agCard({tipo:'form',key,pre:r.pre,resumo:a.resumo,avisos:r.avisos,falta:r.falta,direto});
+    return {ok:true,situacao:direto?'Cartão mostrado com o botão Confirmar. Ainda NÃO foi salvo: salva quando a pessoa clicar.':'Formulário pronto para abrir (precisa de foto/arquivo ou de campos que faltam). Ainda NÃO foi salvo.',camposAceitos:Object.keys(r.pre),avisos:r.avisos,faltaPreencher:r.falta}; }
+  if(u.name==='alterar_registro'){ const key=agEditaveis()[a.colecao]; if(!key) return {erro:'Não é possível alterar '+a.colecao+' por aqui.'};
+    const cur=G(a.colecao,a.id); if(!cur||cur.excluido||!agLC(a.colecao).some(d=>d.id===a.id)) return {erro:'Registro não encontrado: '+a.id};
+    const r=agResolver(key,a.campos); const mud={}; for(const [k,v] of Object.entries(r.pre)) if(String(cur[k]??'')!==String(v)) mud[k]=v;
+    if(!Object.keys(mud).length) return {erro:'Nada para mudar: os valores já são esses.',avisos:r.avisos};
+    agCard({tipo:'editar',col:a.colecao,key,id:a.id,mud,resumo:a.resumo,avisos:r.avisos});
+    return {ok:true,situacao:'Cartão de alteração mostrado. Ainda NÃO foi alterado: muda quando a pessoa clicar em Confirmar.',mudancas:Object.keys(mud),avisos:r.avisos}; }
+  if(u.name==='excluir_registro'){ if(!ehEquipe()||!agEditaveis()[a.colecao]) return {erro:'Sem permissão'}; const cur=G(a.colecao,a.id); if(!cur||cur.excluido) return {erro:'Registro não encontrado'};
+    agCard({tipo:'excluir',col:a.colecao,id:a.id,motivo:String(a.motivo||'').slice(0,300)}); return {ok:true,situacao:'Pedido de exclusão mostrado. Ainda NÃO foi excluído.'}; }
+  if(u.name==='acao_sistema') return agPrepAcao(a);
+  if(u.name==='sugerir_melhoria') return await agMelhoria(a);
   return {erro:'Ferramenta desconhecida'};
 }
 /* ---------- conversa ---------- */
@@ -1635,7 +1650,7 @@ async function agEnviar(txt){
       AG.msgs.push({role:'assistant',content});
       for(const b of content) if(b.type==='text' && b.text.trim()) AG.ui.push({de:'ag',txt:b.text});
       const uses=content.filter(b=>b.type==='tool_use'); if(!uses.length) break;
-      AG.ui.push({de:'sis',txt:uses.map(u=>({consultar_dados:'Consultando '+((u.input||{}).colecao||'dados'),indicadores:({visao_geral:'Lendo o resumo da empresa',resultado:'Calculando o resultado',rentabilidade:'Calculando a rentabilidade',fluxo_caixa:'Calculando o fluxo de caixa',clientes_risco:'Analisando os clientes',franquia_km:'Vendo as franquias de km',combustivel:'Somando o combustível',pendencias:'Vendo as pendências'})[(u.input||{}).tipo]||'Calculando',abrir_tela:'Abrindo a tela',preparar_registro:'Preparando o formulário',pagar_conta:'Preparando o pagamento',gerar_fatura:'Preparando a fatura',pedir_km_adicional:'Abrindo os pacotes'}[u.name]||u.name)).join(' · ')}); agDesenhar();
+      AG.ui.push({de:'sis',txt:uses.map(u=>({consultar_dados:'Consultando '+((u.input||{}).colecao||'dados'),indicadores:({visao_geral:'Lendo o resumo da empresa',resultado:'Calculando o resultado',rentabilidade:'Calculando a rentabilidade',fluxo_caixa:'Calculando o fluxo de caixa',clientes_risco:'Analisando os clientes',franquia_km:'Vendo as franquias de km',combustivel:'Somando o combustível',pendencias:'Vendo as pendências'})[(u.input||{}).tipo]||'Calculando',abrir_tela:'Abrindo a tela',preparar_registro:'Preparando o registro',alterar_registro:'Preparando a alteração',excluir_registro:'Preparando a exclusão',acao_sistema:'Preparando a ação',sugerir_melhoria:'Anotando uma sugestão de melhoria',pagar_conta:'Preparando o pagamento'}[u.name]||u.name)).join(' · ')}); agDesenhar();
       const res=[]; for(const u of uses){ let out; try{ out=await agExec(u); }catch(ex){ out={erro:errMsg(ex)}; } res.push({type:'tool_result',tool_use_id:u.id,content:JSON.stringify(out).slice(0,40000)}); }
       AG.msgs.push({role:'user',content:res});
       if(i===7) AG.ui.push({de:'ag',txt:'Parei aqui para não demorar demais. Pode me pedir para continuar.'});
@@ -1648,16 +1663,34 @@ function agCardHTML(c){
   const fim=c.feito?`<div class="agok">${esc(c.feito)}</div>`:'';
   if(c.tipo==='form'){ const sc=SCHEMA[c.key];
     const linhas=sc.fields.filter(f=>f.k && c.pre[f.k]!=null && c.pre[f.k]!=='').map(f=>`<div><dt>${esc(f.l||'Veículo')}</dt><dd>${esc(agValorTxt(f,c.pre[f.k]))}</dd></div>`).join('');
-    return `<div class="agcard"><b>${esc(sc.titulo)}</b>${c.resumo?`<p>${esc(c.resumo)}</p>`:''}<dl>${linhas}</dl>${c.avisos.length?`<p class="neg">${c.avisos.map(esc).join('<br>')}</p>`:''}${c.falta.length?`<p class="muted">Falta preencher: ${c.falta.map(esc).join(', ')}.</p>`:''}${fim||`<button class="btn pri sm" data-agc="${c.n}">Conferir e salvar</button>`}</div>`; }
+    return `<div class="agcard"><b>${esc(sc.titulo)}</b>${c.resumo?`<p>${esc(c.resumo)}</p>`:''}<dl>${linhas}</dl>${c.avisos.length?`<p class="neg">${c.avisos.map(esc).join('<br>')}</p>`:''}${c.falta.length?`<p class="muted">Falta preencher: ${c.falta.map(esc).join(', ')}.</p>`:''}${fim||(c.direto?`<div class="row"><button class="btn pri sm" data-agc="${c.n}">Confirmar</button><button class="btn sm" data-agc="${c.n}" data-agf="1">Abrir formulário</button></div>`:`<div class="row"><button class="btn pri sm" data-agc="${c.n}" data-agf="1">Abrir formulário</button>${agPodeDireto(c.key,c.pre)?'':'<small class="muted">para anexar a foto ou a nota</small>'}</div>`)}</div>`; }
+  if(c.tipo==='editar'){ const sc=SCHEMA[c.key]; const cur=G(c.col,c.id)||{};
+    const linhas=Object.entries(c.mud).map(([k,v])=>{ const f=sc.fields.find(x=>x.k===k)||{k,l:k}; return `<div><dt>${esc(f.l||k)}</dt><dd><s class="muted">${esc(cur[k]==null||cur[k]===''?'vazio':agValorTxt(f,cur[k]))}</s> → ${esc(agValorTxt(f,v))}</dd></div>`; }).join('');
+    return `<div class="agcard"><b>Alterar · ${esc(refLabel(c.col,cur)||sc.titulo)}</b>${c.resumo?`<p>${esc(c.resumo)}</p>`:''}<dl>${linhas}</dl>${c.avisos&&c.avisos.length?`<p class="neg">${c.avisos.map(esc).join('<br>')}</p>`:''}${fim||`<div class="row"><button class="btn pri sm" data-agc="${c.n}">Confirmar</button><button class="btn sm" data-agc="${c.n}" data-agf="1">Abrir formulário</button></div>`}</div>`; }
+  if(c.tipo==='excluir'){ const cur=G(c.col,c.id)||{}; return `<div class="agcard"><b>Excluir · ${esc(refLabel(c.col,cur))}</b><p>Motivo: ${esc(c.motivo||'—')}</p><p class="muted">O registro sai das listas, mas fica no histórico e na auditoria.</p>${fim||`<button class="btn danger sm" data-agc="${c.n}">Confirmar exclusão</button>`}</div>`; }
+  if(c.tipo==='acao'){ return `<div class="agcard"><b>${esc(c.titulo)}</b>${c.linhas.map(l=>`<p>${esc(l)}</p>`).join('')}${fim||`<button class="btn pri sm" data-agc="${c.n}">${esc(c.abre?'Abrir':'Confirmar')}</button>`}</div>`; }
   if(c.tipo==='pagar'){ const k=G('contas',c.id)||{}; return `<div class="agcard"><b>Pagar conta</b><dl><div><dt>Conta</dt><dd>${esc(k.descricao)}</dd></div><div><dt>Centro de custo</dt><dd>${esc(centroLbl(k.centro))}</dd></div><div><dt>Valor</dt><dd>${money(k.valor)}</dd></div><div><dt>Vencimento</dt><dd>${dbr(k.vencimento)}</dd></div></dl>${fim||`<div class="row"><input type="date" id="agd_${c.n}" value="${esc(c.data)}" class="btn sm"><button class="btn pri sm" data-agc="${c.n}">Marcar como paga</button></div>`}</div>`; }
   if(c.tipo==='fatura'){ const k=G('contratos',c.id)||{}; return `<div class="agcard"><b>Emitir fatura</b><p>${esc(PL(k.veiculoId))} · ${esc(nomeCliente(k.clienteId))}</p>${fim||`<button class="btn pri sm" data-agc="${c.n}">Abrir a fatura para conferir</button>`}</div>`; }
   if(c.tipo==='pacote'){ const k=G('contratos',c.id)||{}; return `<div class="agcard"><b>Km adicional</b><p>${esc(PL(k.veiculoId))}</p>${fim||`<button class="btn pri sm" data-agc="${c.n}">Ver pacotes</button>`}</div>`; }
   return '';
 }
-async function agAcao(n){
-  const c=AG.cards[n]; if(!c||c.feito) return;
+async function agAcao(n,form){
+  const c=AG.cards[n]; if(!c||c.feito||c.rodando) return;
+  const abrir=(key,id,pre)=>{ AG.esperando={n,key}; if(window.innerWidth<=860){ AG.aberto=false; agDesenhar(); } openForm(key,id,pre); };
   try{
-    if(c.tipo==='form'){ AG.esperando={n,key:c.key}; if(window.innerWidth<=860){ AG.aberto=false; agDesenhar(); } openForm(c.key,null,c.pre); return; }
+    if(c.tipo==='form'){ if(form||!c.direto){ abrir(c.key,null,c.pre); return; }
+      c.rodando=true; agDesenhar(); const v=agValsBase(c.key,c.pre); const fal=agFaltam(c.key,v,null); if(fal.length){ c.rodando=false; abrir(c.key,null,c.pre); return; }
+      try{ await agSalvarForm(c.key,v,null,null); }finally{ c.rodando=false; }
+      c.feito='Salvo.'; agNota(`[sistema] A pessoa confirmou e foi salvo: "${SCHEMA[c.key].titulo}" (${c.resumo||''}).`); toast('Salvo.'); agDesenhar(); return; }
+    if(c.tipo==='editar'){ const cur=G(c.col,c.id); if(!cur){ c.feito='Registro não encontrado.'; agDesenhar(); return; }
+      if(form){ abrir(c.key,c.id,{...c.mud}); return; }
+      const v={...cur,...c.mud}; delete v.id; const fal=agFaltam(c.key,v,cur); if(fal.length){ abrir(c.key,c.id,{...c.mud}); return; }
+      c.rodando=true; agDesenhar(); try{ await agSalvarForm(c.key,v,c.id,cur); }finally{ c.rodando=false; }
+      c.feito='Alterado.'; agNota(`[sistema] A pessoa confirmou a alteração de ${refLabel(c.col,cur)}: ${Object.keys(c.mud).join(', ')}.`); toast('Alterado.'); agDesenhar(); return; }
+    if(c.tipo==='excluir'){ c.rodando=true; agDesenhar(); try{ await excluirLogico(c.col,c.id,c.motivo); if(['manutencoes','documentos','reembolsos'].includes(c.col)) await syncConta(c.col,c.id,null); if(c.col==='contas') await syncLanc('contas',c.id,[]); }finally{ c.rodando=false; }
+      c.feito='Excluído.'; agNota(`[sistema] A pessoa confirmou a exclusão (${c.col}).`); toast('Registro excluído.'); agDesenhar(); return; }
+    if(c.tipo==='acao'){ const A=agAcoes()[c.acao]; if(c.abre){ A.run(c); return; } c.rodando=true; agDesenhar(); let r; try{ r=await A.run(c); }finally{ c.rodando=false; }
+      c.feito=r||'Feito.'; agNota(`[sistema] A pessoa confirmou: ${c.titulo} — ${c.feito}`); agDesenhar(); return; }
     if(c.tipo==='pagar'){ const k=G('contas',c.id); if(!k||k.status!=='aberta'){ c.feito='Esta conta já não está em aberto.'; agDesenhar(); return; } const dt=($('#agd_'+n)||{}).value||hoje();
       await SCHEMA.contas.save({...k,status:'paga',pagoEm:dt},c.id,k); c.feito='Paga em '+dbr(dt)+'.'; agNota(`[sistema] A pessoa confirmou: conta "${k.descricao}" marcada como paga em ${dbr(dt)}.`); toast('Conta paga.'); agDesenhar(); return; }
     if(c.tipo==='fatura'){ openGerarFatura(c.id); return; }
@@ -1683,7 +1716,7 @@ function agDesenhar(){
   if(!b){ b=document.createElement('button'); b.id='agbtn'; b.type='button'; b.setAttribute('aria-label','Abrir o assistente'); b.innerHTML='<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 10h8M8 13h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Assistente</span>'; document.body.appendChild(b);
     b.onclick=()=>{ AG.aberto=!AG.aberto; agDesenhar(); if(AG.aberto){ agStatus(); setTimeout(()=>{ const i=$('#agin'); if(i) i.focus(); },50); } }; }
   if(!p){ p=document.createElement('aside'); p.id='agpan'; p.setAttribute('aria-label','Assistente'); document.body.appendChild(p);
-    p.addEventListener('click',e=>{ const x=e.target.closest('[data-agc]'); if(x){ agAcao(+x.dataset.agc); return; } const s=e.target.closest('[data-agsug]'); if(s){ const i=$('#agin'); const t=s.dataset.agsug; if(t.endsWith('…')){ i.value=t.slice(0,-1); i.focus(); } else agEnviar(t); return; }
+    p.addEventListener('click',e=>{ const x=e.target.closest('[data-agc]'); if(x){ agAcao(+x.dataset.agc,!!x.dataset.agf); return; } const s=e.target.closest('[data-agsug]'); if(s){ const i=$('#agin'); const t=s.dataset.agsug; if(t.endsWith('…')){ i.value=t.slice(0,-1); i.focus(); } else agEnviar(t); return; }
       if(e.target.closest('[data-agx]')){ AG.aberto=false; agDesenhar(); } if(e.target.closest('[data-agnovo]')){ AG.msgs=[]; AG.ui=[]; AG.cards={}; AG.pend=''; agDesenhar(); } });
     p.addEventListener('submit',e=>{ e.preventDefault(); const i=$('#agin'); const t=i.value; i.value=''; agEnviar(t); });
     p.addEventListener('keydown',e=>{ if(e.target.id==='agin' && e.key==='Enter' && !e.shiftKey){ e.preventDefault(); p.querySelector('form').requestSubmit(); } if(e.key==='Escape'){ AG.aberto=false; agDesenhar(); } }); }
@@ -1691,7 +1724,7 @@ function agDesenhar(){
   if(!AG.aberto) return;
   const sug=ehGestor()?AG_SUG_CLI:agFin()?AG_SUG_F2:AG_SUG_OP;
   const off=AG.status&&!AG.status.chave;
-  const msgs=AG.ui.map(m=>m.de==='eu'?`<div class="agm eu">${esc(m.txt)}</div>`:m.de==='ag'?`<div class="agm ag">${agMd(m.txt)}</div>`:m.de==='sis'?`<div class="agm sis">${esc(m.txt)}…</div>`:m.de==='erro'?`<div class="agm erro">${esc(m.txt)}</div>`:m.de==='card'?agCardHTML(AG.cards[m.n]):'').join('');
+  const msgs=AG.ui.map(m=>m.de==='eu'?`<div class="agm eu">${esc(m.txt)}</div>`:m.de==='ag'?`<div class="agm ag">${agMd(m.txt)}</div>`:m.de==='sis'?`<div class="agm sis">${esc(m.txt)}…</div>`:m.de==='mel'?`<div class="agm mel">Sugestão de melhoria anotada: <b>${esc(m.txt)}</b></div>`:m.de==='erro'?`<div class="agm erro">${esc(m.txt)}</div>`:m.de==='card'?agCardHTML(AG.cards[m.n]):'').join('');
   const vazio=`<div class="agvazio"><b>Olá, ${esc((S.me.nome||'').split(' ')[0]||'tudo bem')}!</b><p>Pergunte qualquer coisa sobre ${ehGestor()?'a sua frota':'a empresa'} ou peça para lançar algo. Antes de salvar, eu sempre mostro o formulário preenchido para você conferir.</p><div class="agsug">${sug.map(s=>`<button type="button" data-agsug="${esc(s)}">${esc(s)}</button>`).join('')}</div></div>`;
   const val=($('#agin')||{}).value||''; const foco=document.activeElement&&document.activeElement.id==='agin';
   p.innerHTML=`<header><div><b>Assistente</b><small>${ehGestor()?esc(nomeCliente(S.me.clienteId)):'F2 Conect'}</small></div><div class="row" style="gap:4px">${AG.ui.length?'<button type="button" class="btn ghost sm" data-agnovo>Nova conversa</button>':''}<button type="button" class="btn ghost sm" data-agx aria-label="Fechar o assistente">Fechar</button></div></header>
@@ -1704,6 +1737,94 @@ function agDesenhar(){
 async function agStatus(){ if(AG.status) return; try{ const r=await fetch('/api/agente'); AG.status=await r.json(); }catch(e){ AG.status={chave:true}; } agDesenhar(); }
 function agGarantir(){ if(!agPode()){ const b=$('#agbtn'), p=$('#agpan'); if(b) b.hidden=true; if(p) p.hidden=true; document.body.classList.remove('ag-on'); return; }
   if(!$('#agbtn')) agDesenhar(); else { $('#agbtn').hidden=AG.aberto; $('#agpan').hidden=!AG.aberto; document.body.classList.toggle('ag-on',AG.aberto); } }
+/* ---------- versão 6: confirmar com um clique, alterar, ações dos botões e melhorias ---------- */
+function agEditaveis(){
+  if(ehGestor()) return {condutores:'p_condutor'};
+  const m={clientes:'clientes',condutores:'condutores',veiculos:'veiculos',contratos:'contratos',leituras:'leituras',manutencoes:'manutencoes',chamados:'chamados',reembolsos:'reembolsos',multas:'multas',documentos:'documentos',pacotes:'pacotes',abastecimentos:'abastecimentos',melhorias:'melhorias'};
+  if(agFin()) Object.assign(m,{contas:'contas',recorrencias:'recorrencias',lancamentos:'lancamentos'});
+  return m;
+}
+function agValsBase(key,pre){ const v={}; for(const f of SCHEMA[key].fields){ if(!f.k||f.sec) continue; if(f.def!=null) v[f.k]=f.def; if(f.defFn) v[f.k]=f.defFn(); } return Object.assign(v,pre||{}); }
+function agFaltam(key,v,cur){ return SCHEMA[key].fields.filter(f=>f.req&&f.k&&!f.sec&&!(f.show&&!f.show(v))&&!['files','checklist'].includes(f.t)&&(f.t==='file'? !(cur&&cur[f.k]) : (v[f.k]===''||v[f.k]==null))).map(f=>f.l||f.k); }
+function agPodeDireto(key,pre){ const v=agValsBase(key,pre); return !SCHEMA[key].fields.some(f=>f.req&&(f.t==='file'||f.t==='files')&&!(f.show&&!f.show(v))); }
+async function agSalvarForm(key,v,id,cur){ const sc=SCHEMA[key]; delete v.plano; const r = sc.save ? await sc.save(v,id||null,cur||null) : await salvar(sc.col,id||null,v); window.dispatchEvent(new CustomEvent('f2salvo',{detail:{key,id:id||r,agente:true}})); return r; }
+const agISO = () => new Date().toISOString();
+function agAcoes(){
+  const g=ehGestor(), eq=ehEquipe(), fin=agFin(); const A={};
+  const veic=c=>{ const v=agVeic(c.veiculo); if(!v) throw 'Veículo não encontrado: '+(c.veiculo||'?'); return v; };
+  const reg=(col,id)=>{ const d=id&&G(col,id); if(!d||d.excluido||!agLC(col).some(x=>x.id===id)) throw 'Registro não encontrado: '+(id||'?'); return d; };
+  const cond=async(c,ap)=>{ const {error}=await Supa.sb.rpc('f2_aprovar_condutor',{p_condutor:c.id,p_aprovar:ap}); if(error) throw erroSupa(error); try{ await carregarPerfis(); }catch(e){} render(); return ap?'Motorista liberado.':'Motorista bloqueado.'; };
+  if(fin){
+    A.receber_fatura={d:'registra o recebimento de uma fatura (id da fatura, data)',prep:c=>{ const f=reg('faturas',c.id); if(f.status!=='aberta') throw 'A fatura não está em aberto.'; c.data=(c.data||hoje()).slice(0,10); return {titulo:'Registrar recebimento',linhas:[`Fatura ${mesbr(f.competencia)} · ${PL(f.veiculoId)} · ${nomeCliente(f.clienteId)}`,`Valor ${money(f.total)} · recebido em ${dbr(c.data)}`]}; },
+      run:async c=>{ await baixarFatura(c.id,c.data); return G('faturas',c.id).status==='paga'?'Recebimento registrado em '+dbr(c.data)+'.':'Não foi registrado.'; }};
+    A.cancelar_fatura={d:'cancela uma fatura (id, texto = motivo)',prep:c=>{ const f=reg('faturas',c.id); if(f.status==='cancelada') throw 'Já está cancelada.'; if(!c.texto) throw 'Informe o motivo do cancelamento.'; return {titulo:'Cancelar fatura',linhas:[`Fatura ${mesbr(f.competencia)} · ${PL(f.veiculoId)} · ${money(f.total)}`,'Motivo: '+c.texto]}; },
+      run:async c=>{ await cancelarFatura(c.id,c.texto); return G('faturas',c.id).status==='cancelada'?'Fatura cancelada.':'Não foi cancelada.'; }};
+    A.emitir_fatura={d:'abre a emissão da fatura do contrato de um carro (veiculo), com a proposta calculada',abre:1,prep:c=>{ const v=veic(c); const k=L('contratos').filter(x=>x.veiculoId===v.id&&x.status!=='encerrado').sort((x,y)=>x.inicio<y.inicio?1:-1)[0]; if(!k) throw 'Contrato não encontrado para '+PL(v.id); c.cid=k.id; return {titulo:'Emitir fatura',linhas:[PL(v.id)+' · '+nomeCliente(k.clienteId)]}; }, run:c=>openGerarFatura(c.cid)};
+    A.gerar_contas_recorrentes={d:'cria agora as contas fixas recorrentes que faltam até este mês',prep:()=>({titulo:'Gerar contas fixas do mês',linhas:['Cria as contas recorrentes que ainda não existem até '+mesbr(mesAtual())+'.']}), run:async()=>{ const n=await gerarRecorrentes(); render(); return n?n+' conta(s) criada(s).':'Nenhuma conta faltando.'; }};
+  }
+  if(eq){
+    A.aprovar_pacote={d:'aprova um pedido de km adicional (id do pacote)',prep:c=>{ const k=reg('pacotes',c.id); if(k.status!=='solicitado') throw 'O pedido não está aguardando.'; const ct=G('contratos',k.contratoId)||{}; return {titulo:'Aprovar km adicional',linhas:[`${nf(k.km)} km por ${money(k.preco)} · ${PL(ct.veiculoId)} · ${nomeCliente(ct.clienteId)}`]}; },
+      run:async c=>{ const k=G('pacotes',c.id); await SCHEMA.pacotes.save({...k,status:'aprovado'},c.id,k); return 'Pacote aprovado.'; }};
+    A.recusar_pacote={d:'recusa um pedido de km adicional (id)',prep:c=>{ const k=reg('pacotes',c.id); return {titulo:'Recusar km adicional',linhas:[`${nf(k.km)} km por ${money(k.preco)}`]}; }, run:async c=>{ await salvar('pacotes',c.id,{status:'recusado'},'recusou pacote'); return 'Pedido recusado.'; }};
+    A.verificar_leitura={d:'marca uma leitura de km como verificada pela F2 (id)',prep:c=>{ const l=reg('leituras',c.id); return {titulo:'Verificar leitura de km',linhas:[`${PL(l.veiculoId)} · ${kmf(l.km)} · ${dtbr(l.data)}`]}; }, run:async c=>{ await salvar('leituras',c.id,{status:'verificada',verificadoPor:S.uid},'verificou leitura'); return 'Leitura verificada.'; }};
+    A.revisar_vistoria={d:'marca uma vistoria como revisada (id)',prep:c=>{ const x=reg('vistorias',c.id); return {titulo:'Marcar vistoria como revisada',linhas:[`${PL(x.veiculoId)} · ${dtbr(x.criadoEm||x.data)} · ${x.condutorNome||''}`]}; }, run:async c=>{ await salvar('vistorias',c.id,{status:'revisada',revisadoPor:S.uid,revisadoEm:agISO()},'revisou vistoria'); return 'Vistoria revisada.'; }};
+    A.confirmar_condutor_multa={d:'confirma quem dirigia numa multa (id da multa, texto = nome)',prep:c=>{ const m=reg('multas',c.id); if(!c.texto) throw 'Informe o nome do condutor.'; return {titulo:'Confirmar condutor da multa',linhas:[`Auto ${m.auto||'—'} · ${PL(m.veiculoId)} · ${dtbr(m.dataHora)}`,'Condutor: '+c.texto]}; }, run:async c=>{ await salvar('multas',c.id,{condutorConfirmado:c.texto},'confirmou condutor'); return 'Condutor confirmado.'; }};
+    A.check_in={d:'abre o check-in de um carro (veiculo)',abre:1,prep:c=>{ const v=veic(c); c.vid=v.id; return {titulo:'Check-in',linhas:[vLbl(v)]}; }, run:c=>openCheckin(c.vid)};
+    A.check_out={d:'abre o checkout de um carro (veiculo)',abre:1,prep:c=>{ const v=veic(c); if(!usoAberto(v.id)) throw 'Este carro não tem check-in aberto.'; c.vid=v.id; return {titulo:'Checkout',linhas:[vLbl(v)]}; }, run:c=>openCheckout(c.vid)};
+  }
+  if(eq||g){
+    A.liberar_motorista={d:'libera o acesso de um motorista (id do condutor)',prep:c=>{ const d=reg('condutores',c.id); return {titulo:'Liberar motorista',linhas:[d.nome+(g?'':' · '+nomeCliente(d.clienteId))]}; }, run:c=>cond(c,true)};
+    A.bloquear_motorista={d:'bloqueia um motorista (id do condutor)',prep:c=>{ const d=reg('condutores',c.id); return {titulo:'Bloquear motorista',linhas:[d.nome,'Ele deixa de conseguir fazer check-in e perde o acesso ao app.']}; }, run:c=>cond(c,false)};
+    A.uso_retroativo={d:'abre o registro de uso esquecido de um carro (veiculo)',abre:1,prep:c=>{ const v=veic(c); c.vid=v.id; return {titulo:'Registrar uso esquecido',linhas:[vLbl(v)]}; }, run:c=>openRetro(c.vid)};
+    A.qr_code={d:'mostra o QR code de check-in de um carro (veiculo)',abre:1,prep:c=>{ const v=veic(c); c.vid=v.id; return {titulo:'QR code do carro',linhas:[vLbl(v)]}; }, run:c=>openQR(c.vid)};
+  }
+  if(g){
+    A.aceitar_vistoria={d:'aceita uma vistoria da F2 (id)',prep:c=>{ const x=reg('vistorias',c.id); return {titulo:'Aceitar vistoria',linhas:[`${PL(x.veiculoId)} · ${dtbr(x.criadoEm||x.data)}`,'Você confirma que o estado do veículo descrito está correto.']}; }, run:async c=>{ await salvar('vistorias',c.id,{status:'aceita',aceiteEm:agISO(),aceitoPor:S.uid},'aceitou vistoria'); return 'Vistoria aceita.'; }};
+    A.contestar_vistoria={d:'contesta uma vistoria (id, texto = o que não confere)',prep:c=>{ const x=reg('vistorias',c.id); if(!c.texto) throw 'Diga o que não confere.'; return {titulo:'Contestar vistoria',linhas:[PL(x.veiculoId),c.texto]}; }, run:async c=>{ await salvar('vistorias',c.id,{status:'contestada',contestacao:c.texto,contestadoPor:S.uid},'contestou vistoria'); return 'Contestação enviada à F2.'; }};
+    A.indicar_condutor_multa={d:'indica quem dirigia numa multa (id da multa, texto = nome completo)',prep:c=>{ const m=reg('multas',c.id); if(!c.texto) throw 'Informe o nome completo.'; return {titulo:'Indicar condutor da multa',linhas:[`${PL(m.veiculoId)} · ${dtbr(m.dataHora)}`,'Condutor: '+c.texto]}; }, run:async c=>{ await salvar('multas',c.id,{condutorConfirmado:c.texto,indicadoPeloCliente:true,indicadoEm:agISO()},'indicou condutor'); return 'Condutor indicado. A F2 fará a indicação ao órgão.'; }};
+    A.pedir_km_adicional={d:'abre os pacotes de km adicional do contrato de um carro (veiculo)',abre:1,prep:c=>{ const v=veic(c); const k=contratoDoVeiculo(v.id); if(!k||k.clienteId!==S.me.clienteId) throw 'Contrato ativo não encontrado.'; c.cid=k.id; return {titulo:'Contratar mais km',linhas:[vLbl(v)]}; }, run:c=>openPacotePortal(c.cid)};
+    A.acionar_seguro={d:'abre o acionamento do seguro de um carro (veiculo)',abre:1,prep:c=>{ const v=veic(c); c.vid=v.id; return {titulo:'Acionar seguro',linhas:[vLbl(v)]}; }, run:c=>openSeguro(c.vid)};
+  }
+  return A;
+}
+function agPrepAcao(a){ const A=agAcoes()[a.acao]; if(!A) return {erro:'Ação não disponível para este usuário: '+a.acao};
+  const c={tipo:'acao',acao:a.acao,id:a.id,veiculo:a.veiculo,data:a.data,texto:a.texto?String(a.texto).slice(0,500):'',abre:!!A.abre};
+  let p; try{ p=A.prep(c); }catch(e){ return {erro:errMsg(e)}; }
+  c.titulo=p.titulo; c.linhas=p.linhas||[]; agCard(c);
+  return {ok:true,situacao:A.abre?'Botão Abrir mostrado; a pessoa completa na tela própria.':'Cartão mostrado com Confirmar. Ainda NÃO foi feito.'}; }
+const MEL_AREAS=[['painel','Painel'],['clientes','Clientes e contratos'],['veiculos','Veículos'],['financeiro','Financeiro'],['cliente','Área do cliente'],['motorista','Área do motorista'],['assistente','Assistente'],['outro','Outro']];
+const MEL_ST=[['nova','Nova'],['aprovada','Aprovada'],['em_andamento','Em andamento'],['feita','Feita'],['descartada','Descartada']];
+const normTxt = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+async function agMelhoria(a){
+  const t=String(a.titulo||'').trim().slice(0,140); if(!t) return {erro:'Informe o título.'};
+  const ex=L('melhorias').find(m=>!['feita','descartada'].includes(m.status)&&normTxt(m.titulo)===normTxt(t));
+  if(ex){ if(ehEquipe()) await salvar('melhorias',ex.id,{vezes:(+ex.vezes||1)+1,ultimaVez:agISO()},'reforçou sugestão'); return {ok:true,jaExistia:true,situacao:'Essa sugestão já estava na lista; marquei que apareceu de novo.'}; }
+  const ult=[...AG.ui].reverse().find(m=>m.de==='eu');
+  await salvar('melhorias',null,{titulo:t,descricao:String(a.descricao||'').slice(0,2000),motivo:String(a.motivo||'').slice(0,1000),prioridade:['alta','media','baixa'].includes(a.prioridade)?a.prioridade:'media',area:MEL_AREAS.some(x=>x[0]===a.area)?a.area:'outro',
+    status:'nova',origem:'assistente',autorNome:S.me.nome||S.me.email,perfilAutor:S.me.perfil,clienteNome:ehGestor()?nomeCliente(S.me.clienteId):'',vezes:1,pedidoOriginal:ult?String(ult.txt).slice(0,400):''},'anotou sugestão de melhoria');
+  AG.ui.push({de:'mel',txt:t}); agDesenhar(); return {ok:true,situacao:'Anotada na lista Melhorias.'};
+}
+SCHEMA.melhorias={col:'melhorias',titulo:'Sugestão de melhoria',fields:[
+  {k:'titulo',l:'Sugestão',req:1,full:1},{k:'area',l:'Área',t:'sel',opts:opt(MEL_AREAS),def:'outro'},{k:'prioridade',l:'Prioridade',t:'sel',opts:opt([['alta','Alta'],['media','Média'],['baixa','Baixa']]),def:'media'},
+  {k:'status',l:'Situação',t:'sel',opts:opt(MEL_ST),def:'nova'},{k:'descricao',l:'O que mudar',t:'area',full:1},{k:'motivo',l:'Por quê (problema ou ganho)',t:'area',full:1},
+  {k:'resposta',l:'Decisão / resposta',t:'area',full:1}],
+  async save(v,id,antes){ if(!antes){ v.origem=v.origem||'usuario'; v.autorNome=v.autorNome||S.me.nome; v.perfilAutor=v.perfilAutor||S.me.perfil; v.vezes=v.vezes||1; } return salvar('melhorias',id,v,antes?(antes.status!==v.status?'mudou situação da sugestão':'editou sugestão'):'anotou sugestão de melhoria'); }};
+const MEL_PILL={nova:'p-info',aprovada:'p-ok',em_andamento:'p-warn',feita:'',descartada:''};
+function vMelhorias(){
+  const f=S.ui.melSt||'abertas'; const ms=L('melhorias').slice().sort((a,b)=>{ const o={alta:0,media:1,baixa:2}; return (o[a.prioridade]??1)-(o[b.prioridade]??1) || ((b.ultimaVez||b.criadoEm||'')>(a.ultimaVez||a.criadoEm||'')?1:-1); });
+  const vis=ms.filter(m=>f==='todas'||(f==='abertas'?!['feita','descartada'].includes(m.status):m.status===f)); const cnt=s=>ms.filter(m=>m.status===s).length;
+  return head('Melhorias','Sugestões para melhorar o sistema. O assistente anota sozinho o que percebe nas conversas; você também pode anotar. Aprove as que valem a pena e me passe a lista para implementar.',
+    `<label class="row muted" for="mel_s">Mostrar <select id="mel_s" class="btn" style="font-weight:500">${[['abertas','Em aberto'],['todas','Todas']].concat(MEL_ST).map(([k,l])=>`<option value="${k}"${k===f?' selected':''}>${l}</option>`).join('')}</select></label>${B('Copiar lista para o Claude','copiarMelhorias')}${B('Nova sugestão','new','data-k="melhorias"',1)}`)+
+  `<div class="stack"><div class="kpis">${kpi('Novas',cnt('nova'),'para avaliar')}${kpi('Aprovadas',cnt('aprovada'),'prontas para implementar')}${kpi('Em andamento',cnt('em_andamento'),'')}${kpi('Feitas',cnt('feita'),'')}</div>
+  <section>${tabela([{h:'Sugestão',f:m=>`<b>${esc(m.titulo)}</b>${m.descricao?`<br><small class="muted">${esc(m.descricao.slice(0,220))}${m.descricao.length>220?'…':''}</small>`:''}`},
+    {h:'Área',f:m=>esc(lbl(MEL_AREAS,m.area))},{h:'Prioridade',f:m=>`<span class="pill ${m.prioridade==='alta'?'p-bad':m.prioridade==='baixa'?'':'p-warn'}">${esc({alta:'Alta',media:'Média',baixa:'Baixa'}[m.prioridade]||'Média')}</span>`},
+    {h:'De quem',f:m=>`${m.origem==='assistente'?'<span class="tag">Assistente</span> ':''}${esc(m.autorNome||'')}${m.clienteNome?'<br><small class="muted">'+esc(m.clienteNome)+'</small>':''}`},
+    {h:'Vezes',n:1,f:m=>+m.vezes>1?m.vezes:'1'},{h:'Data',f:m=>dbr(m.criadoEm)},{h:'Situação',f:m=>`<span class="pill ${MEL_PILL[m.status]||''}">${esc(lbl(MEL_ST,m.status))}</span>`}],
+    vis,'Nenhuma sugestão aqui ainda. Converse com o assistente: ele anota o que perceber.',m=>`data-act="edit" data-k="melhorias" data-id="${m.id}"`)}</section></div>`;
+}
+function textoMelhorias(){ const ms=L('melhorias').filter(m=>['aprovada','nova','em_andamento'].includes(m.status));
+  const ord={aprovada:0,em_andamento:1,nova:2};
+  return 'Melhorias do F2 Conect para implementar ('+dbr(hoje())+'):\n\n'+ms.sort((a,b)=>ord[a.status]-ord[b.status]).map((m,i)=>`${i+1}. [${lbl(MEL_ST,m.status)} · prioridade ${m.prioridade||'media'} · ${lbl(MEL_AREAS,m.area)}] ${m.titulo}${m.descricao?'\n   O que mudar: '+m.descricao:''}${m.motivo?'\n   Por quê: '+m.motivo:''}${m.resposta?'\n   Decisão: '+m.resposta:''}${+m.vezes>1?'\n   Apareceu '+m.vezes+' vezes':''}${m.clienteNome?'\n   Pedido de: '+m.clienteNome:''}`).join('\n\n'); }
 
 /* ===================== render e eventos ===================== */
 const r0=()=>S.route; let _rt=null; function agenda(){ clearTimeout(_rt); _rt=setTimeout(render,40); }
@@ -1720,7 +1841,7 @@ function render(){
     case 'painel': h=vPainel(al); break; case 'clientes': h=vClientes(); break; case 'cliente': h=vCliente(r.id); break;
     case 'veiculos': h=vVeiculos(); break; case 'veiculo': h=vVeiculo(r.id); break; case 'contratos': h=vContratos(); break;
     case 'uso': h=vUso(); break; case 'abast': h=vAbastF2(); break; case 'manut': h=vManut(); break; case 'reemb': h=vReemb(); break; case 'multas': h=vMultas(); break;
-    case 'docs': h=vDocs(); break; case 'vistorias': h=vVistorias(); break; case 'faturas': case 'receber': h=vReceber(); break; case 'financeiro': case 'resultado': h=vResultado(); break; case 'fixas': h=vContas('fixa'); break; case 'variaveis': h=vContas('variavel'); break; case 'config': h=vConfig(); break; case 'auditoria': h=vAuditoria(); break;
+    case 'docs': h=vDocs(); break; case 'vistorias': h=vVistorias(); break; case 'faturas': case 'receber': h=vReceber(); break; case 'financeiro': case 'resultado': h=vResultado(); break; case 'fixas': h=vContas('fixa'); break; case 'variaveis': h=vContas('variavel'); break; case 'config': h=vConfig(); break; case 'auditoria': h=vAuditoria(); break; case 'melhorias': h=vMelhorias(); break;
   }
   const bf=document.activeElement&&document.activeElement.id==='vbusca'; const pos=bf?document.activeElement.selectionStart:null;
   const sy=window.scrollY; main.innerHTML=h; window.scrollTo(0,sy);
@@ -1745,6 +1866,8 @@ document.addEventListener('click', async e=>{
     else if(a==='pagarConta'){ const c=G('contas',id); const dt=await perguntar('Pagar conta',`${esc(c.descricao)} · ${money(c.valor)} · ${esc(centroLbl(c.centro))}. Data do pagamento:`,'Marcar como paga','date'); if(dt!==null){ await SCHEMA.contas.save({...c,status:'paga',pagoEm:dt},id,c); toast('Conta paga. Para anexar o comprovante, abra a conta.'); } }
     else if(a==='csvContas'){ const cl=el.dataset.classe; const m=S.ui.mesC||mesAtual(); const cs=L('contas').filter(c=>(c.classe==='fixa')===(cl==='fixa')&&mesDe(c)===m&&passaCentro(c));
       csv(`contas-${cl}-${m}.csv`,cs,[['Vencimento',c=>dbr(c.vencimento)],['Centro de custo',c=>centroLbl(c.centro)],['Descrição',c=>c.descricao],['Categoria',c=>c.categoria||''],['Fornecedor',c=>c.fornecedor||''],['Tipo',c=>lbl(CLASSE,c.classe)],['Valor (R$)',c=>nf(c.valor,2)],['Situação',c=>c.status],['Pago em',c=>dbr(c.pagoEm)]]); }
+    else if(a==='copiarMelhorias'){ const t=textoMelhorias(); let ok=false; try{ await navigator.clipboard.writeText(t); ok=true; }catch(x){}
+      if(ok) toast('Lista copiada. Cole na conversa com o Claude para implementar.'); else { const dlg=$('#dlg'); dlg.innerHTML=`<form><div class="dh"><h2>Lista de melhorias</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc"><p class="muted" style="margin-top:0">Selecione tudo e copie.</p><textarea readonly style="width:100%;min-height:320px">${esc(t)}</textarea></div></form>`; dlg.querySelector('[data-close]').onclick=()=>dlg.close(); dlg.showModal(); } }
     else if(a==='csvRentab') csv(`rentabilidade-${hoje()}.csv`,linhasRentab(),[['Placa',r=>PL(r.v.id)],['Modelo',r=>r.v.modelo||''],['Situação',r=>VSTATUS[r.status]||r.status],['Receita acumulada',r=>nf(r.acc.rec,2)],['Custos acumulados',r=>nf(r.acc.custo,2)],['Resultado acumulado',r=>nf(r.acc.res,2)],['Preço de compra',r=>nf(r.compra,2)],['Retorno sobre a compra (%)',r=>r.roi!=null?nf(r.roi,1):''],['Km rodado',r=>r.kmRod],['Custo por km',r=>r.custoKm!=null?nf(r.custoKm,2):''],['Aluguel ÷ compra (%/mês)',r=>r.yieldMes!=null?nf(r.yieldMes,2):''],['Resultado médio 3 meses',r=>r.med!=null?nf(r.med,2):''],['Meses para se pagar',r=>r.payback!=null?nf(r.payback,0):'']]);
     else if(a==='centroAdm'){ S.ui.centro=CENTRO_ADM; go('variaveis'); }
     else if(a==='sairVerComo') sairVerComo();
@@ -1794,7 +1917,7 @@ document.addEventListener('click', async e=>{
 });
 document.addEventListener('input',e=>{ if(e.target.id==='vbusca') filtrarVeiculos(e.target.value); });
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'){ const al=e.target.closest&&e.target.closest('[data-al]'); if(al) al.click(); } });
-document.addEventListener('change',e=>{ if(e.target.id==='fx_s'){ try{ localStorage.setItem('f2_saldo_caixa',e.target.value); }catch(x){} render(); return; } if(e.target.id==='fin_m'){ S.ui.mes=e.target.value||mesAtual(); render(); } if(e.target.id==='ab_m'){ S.ui.mesAb=e.target.value||mesAtual(); render(); } if(e.target.id==='fc_m'){ S.ui.mesC=e.target.value||mesAtual(); render(); } if(e.target.id==='fc_c'){ S.ui.centro=e.target.value; render(); } const k=e.target.dataset&&e.target.dataset.pf; if(k && S.p){ S.p.f=S.p.f||{}; S.p.f[k]=e.target.value; render(); } });
+document.addEventListener('change',e=>{ if(e.target.id==='mel_s'){ S.ui.melSt=e.target.value; render(); return; } if(e.target.id==='fx_s'){ try{ localStorage.setItem('f2_saldo_caixa',e.target.value); }catch(x){} render(); return; } if(e.target.id==='fin_m'){ S.ui.mes=e.target.value||mesAtual(); render(); } if(e.target.id==='ab_m'){ S.ui.mesAb=e.target.value||mesAtual(); render(); } if(e.target.id==='fc_m'){ S.ui.mesC=e.target.value||mesAtual(); render(); } if(e.target.id==='fc_c'){ S.ui.centro=e.target.value; render(); } const k=e.target.dataset&&e.target.dataset.pf; if(k && S.p){ S.p.f=S.p.f||{}; S.p.f[k]=e.target.value; render(); } });
 async function salvarCfg(p){ const n={...(G('config','geral')||{}),...p,atualizadoEm:new Date().toISOString(),atualizadoPor:S.uid}; await S.db.doc('config/geral').set(limpa(n)); audit('alterou parâmetros','config','geral',Object.keys(p).join(', ')); toast('Configurações salvas.'); }
 async function salvarPlanos(lista){ await S.db.doc('config/planos').set(limpa({lista,atualizadoEm:new Date().toISOString(),atualizadoPor:S.uid})); const g=G('config','geral'); if(g&&(g.planos||[]).length) await S.db.doc('config/geral').set(limpa({...g,id:undefined,planos:[]})); audit('alterou modelos de plano','config','planos',lista.length+' modelo(s)'); toast('Modelos de plano salvos.'); }
 function bindConfig(){ const imp=$('#cf_imp'); if(imp) imp.onchange=e=>{ const fl=e.target.files[0]; e.target.value=''; if(fl) importar(fl); }; const f=$('#cfgf'); if(!f) return; f.onsubmit=async e=>{ e.preventDefault(); const g=id=>f.querySelector(id).value;
