@@ -5,7 +5,7 @@ Pasta pronta para publicar. O sistema é um site estático (Vercel) que guarda t
 | Arquivo | Para que serve |
 | --- | --- |
 | `index.html` | O sistema inteiro: painel da F2 e portal do cliente (gestor e condutor) |
-| `api/agente.js` | O assistente de chat: confere quem está logado e conversa com o Claude (Anthropic). A chave fica só na Vercel |
+| `api/agente.js` | O assistente de chat: confere quem está logado e conversa com a IA (Google Gemini gratuito, ou Claude se preferir). A chave fica só na Vercel |
 | `config.js` e `api/config.js` | Leem a URL e a chave pública do Supabase, que a integração Supabase ↔ Vercel preenche sozinha |
 | `qrcode.js` | Gera o QR code de check-in de cada carro (biblioteca qrcode-generator, licença MIT) |
 | `instalacao.sql` | Cria tabelas, regras de acesso, tempo real e a pasta de anexos no Supabase (a versão 6 acrescenta o item 10: sugestões de melhoria do cliente) |
@@ -64,19 +64,25 @@ Botão **Assistente** no canto da tela, na Área da F2 e na Área do cliente (ad
 - **Melhorias:** durante as conversas, o assistente anota sozinho sugestões para melhorar o sistema (algo que ele não consegue fazer, um processo repetido à mão, um dado que falta, um erro). Elas ficam em **Sistema → Melhorias**, com prioridade e situação. Aprove as que valem a pena e use **Copiar lista para o Claude** para me mandar e eu implementar.
 - Vê apenas o que o usuário já vê nas telas. O administrativo do cliente só consulta a frota da empresa dele; o perfil operacional não acessa o financeiro.
 
-### Ligar o assistente (uma vez)
+### Ligar o assistente de graça (Google Gemini)
 
-1. Entre em **console.anthropic.com** (o endereço pode abrir como **platform.claude.com**) e crie a conta da F2.
-2. Em **Billing**, coloque crédito (o uso é cobrado por mensagem; cada pergunta custa alguns centavos).
-3. Em **API Keys**, clique em **Create Key**, dê o nome `F2 Conect` e copie a chave (começa com `sk-ant-`). Ela só aparece uma vez.
-4. Na **Vercel**, abra o projeto **f2-conect** → **Settings** → **Environment Variables** → **Add**:
-   - Key: `ANTHROPIC_API_KEY`
+Enquanto não houver chave, o botão **Assistente** fica escondido e nada é cobrado.
+
+1. Entre em **aistudio.google.com** com uma conta Google (a da F2, de preferência).
+2. Clique em **Get API key** → **Create API key** e copie a chave.
+3. Na **Vercel**, abra o projeto **f2-conect** → **Settings** → **Environment Variables** → **Add**:
+   - Key: `GEMINI_API_KEY`
    - Value: cole a chave
    - Marque Production, Preview e Development e clique em **Save**.
-5. Ainda na Vercel, vá em **Deployments**, clique nos três pontinhos do mais recente → **Redeploy**.
-6. Abra o site, clique em **Assistente** e pergunte "como está a empresa este mês?".
+4. Em **Deployments**, clique nos três pontinhos do mais recente → **Redeploy**.
+5. Abra o site: o botão **Assistente** aparece no canto da tela.
 
-A chave nunca vai para o navegador nem para o GitHub. Para trocar o modelo, crie a variável `ANTHROPIC_MODEL` (padrão: `claude-sonnet-5-5`). Para desligar o assistente, apague a variável `ANTHROPIC_API_KEY` e faça Redeploy.
+Não precisa cadastrar cartão. Cuidados do plano gratuito:
+
+- Tem limite de mensagens por minuto e por dia. Quando passar, o assistente avisa e volta a funcionar depois.
+- No plano gratuito, o Google pode usar as conversas para melhorar os produtos dele. Evite colar no chat dados sensíveis (o assistente já não envia CPF nem número de CNH).
+
+Opcional, pago: para usar o Claude no lugar do Gemini, apague `GEMINI_API_KEY` e crie `ANTHROPIC_API_KEY` com uma chave de console.anthropic.com (cobrança por uso). Para desligar o assistente, apague a variável e faça Redeploy.
 
 ## Painel completo (versão 5)
 

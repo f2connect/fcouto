@@ -1450,7 +1450,7 @@ function vRisco(){
 /* O modelo só lê o que este usuário já pode ver (as mesmas regras do banco) e nunca grava sozinho:
    para lançar algo, ele prepara o formulário e a pessoa confere e clica em Salvar. */
 const AG={msgs:[],ui:[],ocupado:false,aberto:false,status:null,cards:{},seq:0};
-const agPode = () => !!S.me && (ehEquipe() || ehGestor());
+const agPode = () => !!S.me && (ehEquipe() || ehGestor()) && !!(AG.status && AG.status.chave);
 const agFin = () => ehEquipe() && pode('resultado');
 const normPlaca = s => String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 const AG_DATA={usos:'inicio',leituras:'data',abastecimentos:'data',vistorias:'criadoEm',chamados:'criadoEm',manutencoes:'data',reembolsos:'criadoEm',multas:'dataHora',documentos:'vencimento',faturas:'competencia',contas:'vencimento',lancamentos:'competencia',contratos:'inicio',recorrencias:'inicio',pacotes:'solicitadoEm',condutores:'nome',clientes:'nome',veiculos:'placa'};
@@ -1635,9 +1635,10 @@ async function agChamar(){
   if(!r.ok) throw {status:r.status,...j};
   return j;
 }
-function agErro(e){ const s=e&&e.status; if(e&&e.erro==='sem_chave') return 'O assistente ainda não foi ligado: falta colocar a chave da Anthropic na Vercel (passo a passo no LEIA-ME, item "Assistente").';
+function agErro(e){ const s=e&&e.status; if(e&&e.erro==='sem_chave') return 'O assistente está desligado: falta a chave da IA na Vercel (passo a passo no LEIA-ME, item "Assistente").';
+  if(e&&e.erro==='limite') return 'O limite gratuito da IA foi atingido por agora. Espere alguns minutos (ou até amanhã, se for o limite do dia) e tente de novo.';
   if(s===401||s===403) return 'Seu usuário não tem acesso ao assistente.'; if(s===429||(e&&e.status_api===429)) return 'Muitas mensagens em pouco tempo. Espere um minuto e tente de novo.';
-  if(e&&e.erro==='credito') return 'A conta da Anthropic está sem crédito. Coloque crédito em console.anthropic.com → Billing.';
+  if(e&&e.erro==='credito') return 'A conta da IA está sem crédito.';
   return 'Não consegui falar com o assistente agora'+(e&&e.detalhe?' ('+e.detalhe+')':'')+'. Tente de novo em instantes.'; }
 async function agEnviar(txt){
   txt=String(txt||'').trim(); if(!txt||AG.ocupado) return; AG.ocupado=true;
@@ -1714,7 +1715,7 @@ function agDesenhar(){
   let b=$('#agbtn'), p=$('#agpan');
   if(!agPode()){ if(b) b.hidden=true; if(p) p.hidden=true; return; }
   if(!b){ b=document.createElement('button'); b.id='agbtn'; b.type='button'; b.setAttribute('aria-label','Abrir o assistente'); b.innerHTML='<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 10h8M8 13h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Assistente</span>'; document.body.appendChild(b);
-    b.onclick=()=>{ AG.aberto=!AG.aberto; agDesenhar(); if(AG.aberto){ agStatus(); setTimeout(()=>{ const i=$('#agin'); if(i) i.focus(); },50); } }; }
+    b.onclick=()=>{ AG.aberto=!AG.aberto; agDesenhar(); if(AG.aberto){ setTimeout(()=>{ const i=$('#agin'); if(i) i.focus(); },50); } }; }
   if(!p){ p=document.createElement('aside'); p.id='agpan'; p.setAttribute('aria-label','Assistente'); document.body.appendChild(p);
     p.addEventListener('click',e=>{ const x=e.target.closest('[data-agc]'); if(x){ agAcao(+x.dataset.agc,!!x.dataset.agf); return; } const s=e.target.closest('[data-agsug]'); if(s){ const i=$('#agin'); const t=s.dataset.agsug; if(t.endsWith('…')){ i.value=t.slice(0,-1); i.focus(); } else agEnviar(t); return; }
       if(e.target.closest('[data-agx]')){ AG.aberto=false; agDesenhar(); } if(e.target.closest('[data-agnovo]')){ AG.msgs=[]; AG.ui=[]; AG.cards={}; AG.pend=''; agDesenhar(); } });
@@ -1728,14 +1729,14 @@ function agDesenhar(){
   const vazio=`<div class="agvazio"><b>Olá, ${esc((S.me.nome||'').split(' ')[0]||'tudo bem')}!</b><p>Pergunte qualquer coisa sobre ${ehGestor()?'a sua frota':'a empresa'} ou peça para lançar algo. Antes de salvar, eu sempre mostro o formulário preenchido para você conferir.</p><div class="agsug">${sug.map(s=>`<button type="button" data-agsug="${esc(s)}">${esc(s)}</button>`).join('')}</div></div>`;
   const val=($('#agin')||{}).value||''; const foco=document.activeElement&&document.activeElement.id==='agin';
   p.innerHTML=`<header><div><b>Assistente</b><small>${ehGestor()?esc(nomeCliente(S.me.clienteId)):'F2 Conect'}</small></div><div class="row" style="gap:4px">${AG.ui.length?'<button type="button" class="btn ghost sm" data-agnovo>Nova conversa</button>':''}<button type="button" class="btn ghost sm" data-agx aria-label="Fechar o assistente">Fechar</button></div></header>
-    <div class="aglog" id="aglog">${off?'<div class="agm erro">O assistente ainda não foi ligado: falta colocar a chave da Anthropic na Vercel. O passo a passo está no LEIA-ME, item "Assistente".</div>':''}${msgs||vazio}${AG.ocupado?'<div class="agm sis agpensa"><i></i><i></i><i></i></div>':''}</div>
+    <div class="aglog" id="aglog">${msgs||vazio}${AG.ocupado?'<div class="agm sis agpensa"><i></i><i></i><i></i></div>':''}</div>
     <form class="agform"><textarea id="agin" rows="2" placeholder="Escreva sua mensagem…" aria-label="Mensagem para o assistente" ${AG.ocupado?'disabled':''}></textarea><button class="btn pri" type="submit" ${AG.ocupado?'disabled':''}>Enviar</button></form>
     <small class="agrod">O assistente pode errar. Confira os números importantes nas telas.</small>`;
   const i=$('#agin'); i.value=val; if(foco||!AG.ocupado&&AG.ui.length) { try{ i.focus(); }catch(e){} }
   const lg=$('#aglog'); lg.scrollTop=lg.scrollHeight;
 }
-async function agStatus(){ if(AG.status) return; try{ const r=await fetch('/api/agente'); AG.status=await r.json(); }catch(e){ AG.status={chave:true}; } agDesenhar(); }
-function agGarantir(){ if(!agPode()){ const b=$('#agbtn'), p=$('#agpan'); if(b) b.hidden=true; if(p) p.hidden=true; document.body.classList.remove('ag-on'); return; }
+async function agStatus(){ if(AG.status||AG.buscando) return; AG.buscando=true; try{ const r=await fetch('/api/agente',{cache:'no-store'}); AG.status=r.ok?await r.json():{chave:false}; }catch(e){ AG.status={chave:false}; } AG.buscando=false; agGarantir(); }
+function agGarantir(){ if(!AG.status){ agStatus(); } if(!agPode()){ const b=$('#agbtn'), p=$('#agpan'); if(b) b.hidden=true; if(p) p.hidden=true; document.body.classList.remove('ag-on'); return; }
   if(!$('#agbtn')) agDesenhar(); else { $('#agbtn').hidden=AG.aberto; $('#agpan').hidden=!AG.aberto; document.body.classList.toggle('ag-on',AG.aberto); } }
 /* ---------- versão 6: confirmar com um clique, alterar, ações dos botões e melhorias ---------- */
 function agEditaveis(){
