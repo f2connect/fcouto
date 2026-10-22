@@ -1636,6 +1636,7 @@ async function agChamar(){
   return j;
 }
 function agErro(e){ const s=e&&e.status; if(e&&e.erro==='sem_chave') return 'O assistente está desligado: falta a chave da IA na Vercel (passo a passo no LEIA-ME, item "Assistente").';
+  if(e&&e.erro==='ocupado') return 'A IA gratuita do Google está sobrecarregada agora. Tente de novo em um ou dois minutos.';
   if(e&&e.erro==='limite') return 'O limite gratuito da IA foi atingido por agora. Espere alguns minutos (ou até amanhã, se for o limite do dia) e tente de novo.';
   if(s===401||s===403) return 'Seu usuário não tem acesso ao assistente.'; if(s===429||(e&&e.status_api===429)) return 'Muitas mensagens em pouco tempo. Espere um minuto e tente de novo.';
   if(e&&e.erro==='credito') return 'A conta da IA está sem crédito.';
