@@ -84,6 +84,15 @@ Não precisa cadastrar cartão. Cuidados do plano gratuito:
 
 Opcional, pago: para usar o Claude no lugar do Gemini, apague `GEMINI_API_KEY` e crie `ANTHROPIC_API_KEY` com uma chave de console.anthropic.com (cobrança por uso). Para desligar o assistente, apague a variável e faça Redeploy.
 
+## Despesas fixas e rendimento de cada carro (versão 9)
+
+- Dentro de cada carro, a aba **Rendimento** mostra o faturamento mensal (aluguel do contrato), as despesas fixas do carro e quanto ele **rende por mês** (faturamento − despesas fixas). Também mostra o rendimento descontando a média dos custos variáveis e o valor faturado no mês.
+- Botões prontos para lançar **Consórcio**, **Seguro** ou qualquer outra despesa fixa. Elas viram contas a pagar todo mês sozinhas, em Contas fixas.
+- **Consórcio com 2 carros:** marque **Dividir com outro carro**, escolha o segundo carro e a porcentagem (padrão: metade para cada). A conta é uma só (um boleto), e o custo vai metade para cada carro no resultado.
+- Despesas que se repetem **uma vez por ano** (IPVA, licenciamento, seguro à vista) entram no rendimento divididas por 12.
+- Se o cadastro do carro tiver parcela de consórcio que ainda não está nas despesas fixas, o sistema avisa e lança com um clique.
+- O cartão de cada carro em **Veículos** e a aba **Rentabilidade por carro** do Painel mostram o "rende por mês". O assistente também responde ("quanto rende o RTA1B23?").
+
 ## Painel completo (versão 5)
 
 O Painel tem quatro abas:

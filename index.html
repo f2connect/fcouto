@@ -200,6 +200,7 @@ details summary{cursor:pointer}
 @media (max-width:860px){ .side-foot{flex-direction:row;align-items:center;justify-content:space-between;margin-top:8px;padding-top:8px} .chklist{grid-template-columns:minmax(0,1fr)} }
 
 .kpi b .kpitx{white-space:normal;font-size:18px;line-height:1.2;display:block;overflow-wrap:anywhere}
+.vcard .rende{display:block;border-top:1px solid var(--line);padding-top:6px;margin-top:2px}
 .hbar{height:6px;background:var(--surface-2);border-radius:3px;margin-top:4px;overflow:hidden}.hbar i{display:block;height:100%;border-radius:3px}
 #agbtn{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:40;display:flex;align-items:center;gap:8px;background:var(--accent);color:var(--accent-fg);border:0;border-radius:999px;padding:12px 18px 12px 15px;font:inherit;font-weight:600;font-size:15px;box-shadow:0 6px 22px rgba(0,0,0,.22);cursor:pointer}
 #agbtn:hover{filter:brightness(1.07)} #agbtn[hidden],#agpan[hidden]{display:none}
@@ -924,7 +925,7 @@ function vCard(v){
   return `<button class="vcard" data-go="veiculo" data-id="${v.id}"><div class="top">${placaHTML(v)}${statusPill(v)}</div>
     <div><div class="model">${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao||'')}${isEx(v)}</div><small class="muted">${esc(v.anoFab||'')}${v.anoModelo?'/'+esc(v.anoModelo):''} · ${kmf(kmAtual(v))}</small></div>
     <small>${c?`<b>${esc(nomeCliente(c.clienteId))}</b> · até ${dbr(c.fim)}`:'<span class="muted">Sem contrato ativo</span>'}${u?`<br>Com ${esc(nomeCondutor(u))}`:''}</small>
-    ${c?kmBarHTML(c):''}</button>`;
+    ${c?kmBarHTML(c):''}${pode('resultado')?(()=>{ const r=rendimentoVeiculo(v.id); return `<small class="rende">Rende <b class="${r.rende<0?'neg':''}">${money(r.rende)}</b>/mês · fixas ${money(r.totFixas)}</small>`; })():''}</button>`;
 }
 function tabelaContratos(cs){
   return tabela([{h:'Veículo',f:c=>vCell(c.veiculoId)},{h:'Cliente',f:c=>esc(nomeCliente(c.clienteId))+isEx(c)},{h:'Vigência',f:c=>`${dbr(c.inicio)} – ${dbr(c.fim)}${c.prazoMeses?`<br><small class="muted">${c.prazoMeses} meses</small>`:''}`},{h:'Aluguel',n:1,f:c=>money(c.aluguel)},{h:'Franquia',f:c=>c.kmContratado?`${nf(c.kmContratado)} km ${c.periodicidade==='total'?'no total':'/mês'}`:'Sem limite'},{h:'Consumo',f:c=>contratoAtivo(c)?`<div style="min-width:160px">${kmBarHTML(c)}</div>`:'—'},{h:'PDF',f:c=>arq(c.pdf)},{h:'Situação',f:c=>contratoAtivo(c)?'<span class="pill p-ok">Ativo</span>':c.status==='encerrado'?'<span class="pill">Encerrado</span>':c.inicio>hoje()?'<span class="pill p-info">Futuro</span>':'<span class="pill p-warn">Vencido</span>'}],cs,'Nenhum contrato.',c=>`data-act="edit" data-k="contratos" data-id="${c.id}"`);
@@ -1036,11 +1037,13 @@ function secDados(){
 function vVeiculo(id){
   const v=G('veiculos',id); if(!v) return head('Veículo não encontrado');
   const t=S.ui.vtab; const c=contratoDoVeiculo(id); const u=usoAberto(id); const cs=L('contratos').filter(x=>x.veiculoId===id).sort((a,b)=>a.inicio<b.inicio?1:-1);
-  const TABS=[['resumo','Resumo'],['contrato','Contrato'],['uso','Uso e check-in'],['km','Quilometragem'],['abast','Abastecimento'],['vist','Vistorias'],['manut','Manutenções'],['chamados','Chamados e reembolsos'],['docs','Documentos e seguros'],['multas','Multas'],['fin','Financeiro'],['historico','Histórico']];
+  const TABS=[['resumo','Resumo'],...(pode('resultado')?[['rende','Rendimento']]:[]),['contrato','Contrato'],['uso','Uso e check-in'],['km','Quilometragem'],['abast','Abastecimento'],['vist','Vistorias'],['manut','Manutenções'],['chamados','Chamados e reembolsos'],['docs','Documentos e seguros'],['multas','Multas'],['fin','Financeiro'],['historico','Histórico']];
   let body='';
-  if(t==='resumo'){
+  if(t==='rende' && pode('resultado')) body=rendeHTML(id);
+  else if(t==='resumo'){
     const al=alertas().filter(a=>a.go&&a.go.id===id);
-    body=`<div class="stack"><div class="card"><dl class="info"><div><dt>Situação</dt><dd>${statusPill(v)}</dd></div><div><dt>Km atual</dt><dd>${kmf(kmAtual(v))}</dd></div><div><dt>Cliente</dt><dd>${c?`<button class="btn ghost sm" data-go="cliente" data-id="${c.clienteId}">${esc(nomeCliente(c.clienteId))}</button>`:'—'}</dd></div><div><dt>Contrato até</dt><dd>${c?dbr(c.fim):'—'}</dd></div><div><dt>Com quem está</dt><dd>${u?esc(nomeCondutor(u))+' desde '+dtbr(u.inicio):'Ninguém'}</dd></div>
+    const rd=pode('resultado')?rendimentoVeiculo(id):null;
+    body=`<div class="stack">${rd?`<div class="kpis">${kpi('Faturamento mensal',money(rd.aluguel),rd.c?'aluguel do contrato':'sem contrato')}${kpi('Despesas fixas por mês',money(rd.totFixas),rd.fixas.length+' despesa(s)')}${kpi('Rende por mês',`<em class="${rd.rende<0?'neg':''}">${money(rd.rende)}</em>`,`<button class="btn ghost sm" data-vtab="rende">ver detalhe</button>`)}</div>`:''}<div class="card"><dl class="info"><div><dt>Situação</dt><dd>${statusPill(v)}</dd></div><div><dt>Km atual</dt><dd>${kmf(kmAtual(v))}</dd></div><div><dt>Cliente</dt><dd>${c?`<button class="btn ghost sm" data-go="cliente" data-id="${c.clienteId}">${esc(nomeCliente(c.clienteId))}</button>`:'—'}</dd></div><div><dt>Contrato até</dt><dd>${c?dbr(c.fim):'—'}</dd></div><div><dt>Com quem está</dt><dd>${u?esc(nomeCondutor(u))+' desde '+dtbr(u.inicio):'Ninguém'}</dd></div>
       <div><dt>Ano</dt><dd>${esc(v.anoFab||'—')}/${esc(v.anoModelo||'—')}</dd></div><div><dt>Cor · combustível · câmbio</dt><dd>${esc([v.cor,v.combustivel,v.cambio].filter(Boolean).join(' · ')||'—')}</dd></div><div><dt>Renavam</dt><dd class="mono">${esc(v.renavam||'—')}</dd></div><div><dt>Chassi</dt><dd class="mono">${esc(v.chassi||'—')}</dd></div></dl></div>
       ${c?`<div class="card"><h3>Franquia de km</h3>${kmBarHTML(c)}</div>`:''}
       ${al.length?`<section class="card" style="padding:0"><div style="padding:14px 14px 6px"><h3>Alertas deste veículo</h3></div><div class="alerts">${al.map(a=>`<div class="alert"><span class="sev ${a.sev}"></span><div><b>${esc(a.titulo)}</b><small>${esc(a.detalhe)}</small></div><span></span></div>`).join('')}</div></section>`:''}
@@ -1087,10 +1090,10 @@ function vVeiculo(id){
   else if(t==='multas'){ body=`<div class="stack"><div>${B('Nova multa','new','data-k="multas" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}</div>${tabela([{h:'Infração',f:m=>dtbr(m.dataHora)},{h:'Auto',f:m=>esc(m.auto||'—')},{h:'Valor',n:1,f:m=>money(m.valor)},{h:'Condutor',f:m=>{const u2=condutorSugerido(id,m.dataHora); return esc(m.condutorConfirmado||(u2?nomeCondutor(u2)+' (sugerido)':'não identificado'));}}],L('multas').filter(m=>m.veiculoId===id),'Nenhuma multa.',m=>`data-act="edit" data-k="multas" data-id="${m.id}"`)}</div>`; }
   else if(t==='vist'){ body=`<div class="stack"><div>${B('Nova vistoria','new','data-k="vistorias" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}</div>${tabelaVist(L('vistorias').filter(x=>x.veiculoId===id).sort((a,b)=>a.data<b.data?1:-1))}</div>`; }
   else if(t==='fin'){ const m=mesAtual(); const rm=resumoFin(x=>x===id,x=>x===m), ra=resumoFin(x=>x===id,()=>true); const inv=L('lancamentos').filter(l=>l.veiculoId===id&&l.tipo==='investimento').reduce((s,l)=>s+(+l.valor||0),0);
-    const cs=L('contas').filter(c=>c.centro===id).sort((a,b)=>(a.vencimento||'')<(b.vencimento||'')?1:-1); const recs=L('recorrencias').filter(r=>r.centro===id);
+    const temCarro=c=>partesConta(c).some(p=>p.centro===id); const cs=L('contas').filter(temCarro).sort((a,b)=>(a.vencimento||'')<(b.vencimento||'')?1:-1); const recs=L('recorrencias').filter(temCarro);
     body=`<div class="stack"><div class="kpis">${kpi('Receita '+mesbr(m),money(rm.rec),'')}${kpi('Custo fixo '+mesbr(m),money(rm.fixa),'')}${kpi('Custo variável '+mesbr(m),money(rm.variavel),'')}${kpi('Resultado '+mesbr(m),money(rm.res),rm.mg!=null?'Margem '+nf(rm.mg)+'%':'')}${kpi('Resultado acumulado',money(ra.res),'receita '+money(ra.rec)+' · custos '+money(ra.custo))}${kpi('Capital investido',money(inv),'')}</div>
       <div class="row">${B('Nova conta fixa recorrente','new','data-k="recorrencias" data-preset=\'{"centro":"'+id+'"}\'')}${B('Nova conta variável','new','data-k="contas" data-preset=\'{"centro":"'+id+'","classe":"variavel"}\'',1)}${B('Nova conta fixa avulsa','new','data-k="contas" data-preset=\'{"centro":"'+id+'","classe":"fixa"}\'')}</div>
-      ${recs.length?`<section><h3>Contas fixas recorrentes deste carro</h3>${tabela([{h:'Descrição',f:r=>esc(r.descricao)},{h:'Valor mensal',n:1,f:r=>money(r.valor)},{h:'Vence dia',n:1,f:r=>esc(r.diaVenc)},{h:'Situação',f:r=>r.ativa?'<span class="pill p-ok">Ativa</span>':'<span class="pill">Pausada</span>'}],recs,'',r=>`data-act="edit" data-k="recorrencias" data-id="${r.id}"`)}</section>`:''}
+      ${recs.length?`<section><h3>Contas fixas recorrentes deste carro</h3>${tabela([{h:'Descrição',f:r=>esc(r.descricao)+(r.rateio?'<br><small class="muted">'+esc(r.rateio.map(p=>centroLbl(p.centro)+' '+p.pct+'%').join(' · '))+'</small>':'')},{h:'Valor',n:1,f:r=>money(r.valor)+(r.periodicidade==='anual'?' /ano':'')},{h:'Vence dia',n:1,f:r=>esc(r.diaVenc)},{h:'Situação',f:r=>r.ativa?'<span class="pill p-ok">Ativa</span>':'<span class="pill">Pausada</span>'}],recs,'',r=>`data-act="edit" data-k="recorrencias" data-id="${r.id}"`)}</section>`:''}
       <section><h3>Contas deste carro (centro de custo ${esc(centroLbl(id))})</h3>${tabelaContas(cs,false)}</section>
       <section><h3>Lançamentos</h3>${tabelaLanc(L('lancamentos').filter(l=>l.veiculoId===id).sort((a,b)=>a.competencia<b.competencia?1:-1))}</section></div>`; }
   return `<p class="muted" style="margin:0 0 6px"><button class="btn ghost sm" data-go="veiculos">‹ Veículos</button></p>`+
@@ -1127,8 +1130,9 @@ const contasAtivas = () => L('contas').filter(c=>c.status!=='cancelada');
 /* Resultado por competência: receita das faturas emitidas e custos das contas (pagas ou a pagar). */
 function resumoFin(fCentro, fMes){
   const rec=fatAtivas().filter(f=>fCentro(f.veiculoId||CENTRO_ADM)&&fMes(f.competencia)).reduce((s,f)=>s+receitaFatura(f),0);
-  const cs=contasAtivas().filter(c=>fCentro(c.centro||CENTRO_ADM)&&fMes(mesDe(c)));
-  const fixa=cs.filter(c=>c.classe==='fixa').reduce((s,c)=>s+(+c.valor||0),0), variavel=cs.filter(c=>c.classe!=='fixa').reduce((s,c)=>s+(+c.valor||0),0);
+  let fixa=0, variavel=0;
+  for(const c of contasAtivas()){ if(!fMes(mesDe(c))) continue; for(const p of partesConta(c)) if(fCentro(p.centro)){ if(c.classe==='fixa') fixa+=p.valor; else variavel+=p.valor; } }
+  fixa=r2(fixa); variavel=r2(variavel);
   const res=rec-fixa-variavel; return {rec,fixa,variavel,custo:fixa+variavel,res,mg:rec?res/rec*100:null};
 }
 const mesesAte = (a,b) => { const [y1,m1]=a.split('-').map(Number), [y2,m2]=b.split('-').map(Number); return (y2-y1)*12+(m2-m1)+1; };
@@ -1139,6 +1143,9 @@ function aReceberContrato(c){ if(!contratoAtivo(c)||!c.fim) return 0; const ini=
 SCHEMA.contas={col:'contas',titulo:'Conta a pagar',fields:[
   {k:'descricao',l:'Descrição',req:1,full:1,hint:'Ex.: Parcela do seguro, troca de pastilhas, honorários do contador'},
   {k:'centro',l:'Centro de custo',t:'sel',optsFn:centroOpts,req:1,full:1,hint:'A placa do carro que gerou o custo, ou Administrativo para custos gerais.'},
+  {k:'divide',l:'Dividir com outro carro (ex.: consórcio com 2 carros)',t:'bool',full:1,show:v=>v.centro&&v.centro!==CENTRO_ADM},
+  {k:'centro2',l:'Outro carro',t:'sel',optsFn:()=>centroOpts().filter(o=>o.v!==CENTRO_ADM),full:1,show:v=>v.divide&&v.centro&&v.centro!==CENTRO_ADM},
+  {k:'pct1',l:'% que fica no primeiro carro',t:'num',def:50,show:v=>v.divide&&v.centro&&v.centro!==CENTRO_ADM,hint:'O resto vai para o outro carro. Ex.: 50 = metade para cada.'},
   {k:'classe',l:'Tipo de custo',t:'sel',opts:opt(CLASSE),req:1},{k:'categoria',l:'Categoria',lista:'cat_contas',hint:'Ex.: Seguro, Rastreador, Manutenção, Contador'},
   {k:'fornecedor',l:'Fornecedor'},{k:'valor',l:'Valor (R$)',t:'money',req:1},
   {k:'vencimento',l:'Vencimento',t:'date',req:1,defFn:hoje},{k:'competencia',l:'Mês de competência',t:'month',hint:'Vazio = mês do vencimento.'},
@@ -1148,20 +1155,25 @@ SCHEMA.contas={col:'contas',titulo:'Conta a pagar',fields:[
   {k:'obs',l:'Observações',t:'area',full:1}],
   async save(v,id,antes){
     if(!v.competencia) v.competencia=(v.vencimento||hoje()).slice(0,7);
+    aplicarRateio(v);
     if(v.status==='paga' && !v.pagoEm) v.pagoEm=hoje();
     if(v.status!=='paga'){ v.pagoEm=null; }
     const nid=await salvar('contas',id,v,antes?(antes.status!==v.status&&v.status==='paga'?'pagou conta':'editou conta'):'lançou conta');
     const c={...(antes||{}),...v};
-    await syncLanc('contas',nid, c.status==='paga'&&+c.valor ? [{veiculoId:c.centro&&c.centro!==CENTRO_ADM?c.centro:null,tipo:'custo',classe:c.classe,categoria:c.categoria||(c.classe==='fixa'?'Conta fixa':'Conta variável'),descricao:c.descricao,valor:+c.valor,competencia:c.competencia+'-01',dataCaixa:c.pagoEm}] : []);
+    await syncLanc('contas',nid, c.status==='paga'&&+c.valor ? partesConta(c).map(p=>({veiculoId:p.centro&&p.centro!==CENTRO_ADM?p.centro:null,tipo:'custo',classe:c.classe,categoria:c.categoria||(c.classe==='fixa'?'Conta fixa':'Conta variável'),descricao:c.descricao+(c.rateio?` (${p.pct}%)`:''),valor:p.valor,competencia:c.competencia+'-01',dataCaixa:c.pagoEm})) : []);
     return nid; }};
 SCHEMA.recorrencias={col:'recorrencias',titulo:'Conta fixa recorrente',fields:[
   {k:'descricao',l:'Descrição',req:1,full:1,hint:'Ex.: Rastreador, Parcela do consórcio, Contador'},
-  {k:'centro',l:'Centro de custo',t:'sel',optsFn:centroOpts,req:1,full:1},
-  {k:'categoria',l:'Categoria',lista:'cat_contas'},{k:'fornecedor',l:'Fornecedor'},
-  {k:'valor',l:'Valor mensal (R$)',t:'money',req:1},{k:'diaVenc',l:'Dia do vencimento',t:'num',req:1,def:10},
+  {k:'centro',l:'Centro de custo',t:'sel',optsFn:centroOpts,req:1,full:1,hint:'A placa do carro, ou Administrativo para custos gerais da empresa.'},
+  {k:'divide',l:'Dividir com outro carro (ex.: consórcio com 2 carros)',t:'bool',full:1,show:v=>v.centro&&v.centro!==CENTRO_ADM},
+  {k:'centro2',l:'Outro carro',t:'sel',optsFn:()=>centroOpts().filter(o=>o.v!==CENTRO_ADM),full:1,show:v=>v.divide&&v.centro&&v.centro!==CENTRO_ADM},
+  {k:'pct1',l:'% que fica no primeiro carro',t:'num',def:50,show:v=>v.divide&&v.centro&&v.centro!==CENTRO_ADM,hint:'O resto vai para o outro carro. Ex.: 50 = metade para cada.'},
+  {k:'categoria',l:'Categoria',lista:'cat_contas',hint:'Ex.: Consórcio, Seguro, Rastreador, IPVA, Licenciamento'},{k:'fornecedor',l:'Fornecedor'},
+  {k:'periodicidade',l:'Repete',t:'sel',opts:opt([['mensal','Todo mês'],['anual','Uma vez por ano']]),def:'mensal',hint:'Anual: gerada no mesmo mês do "primeiro mês" de cada ano (IPVA, licenciamento, seguro à vista).'},
+  {k:'valor',l:'Valor (R$)',t:'money',req:1,hint:'Valor de cada cobrança (por mês, ou por ano se for anual).'},{k:'diaVenc',l:'Dia do vencimento',t:'num',req:1,def:10},
   {k:'inicio',l:'Primeiro mês',t:'month',req:1,defFn:mesAtual},{k:'fim',l:'Último mês (opcional)',t:'month',hint:'Vazio = sem data para acabar.'},
   {k:'ativa',l:'Gerar todo mês',t:'bool',def:true},{k:'obs',l:'Observações',t:'area',full:1}],
-  async save(v,id){ v.diaVenc=Math.min(28,Math.max(1,+v.diaVenc||10)); const nid=await salvar('recorrencias',id,v,id?'editou conta fixa recorrente':'criou conta fixa recorrente'); await gerarRecorrentes(); return nid; }};
+  async save(v,id){ v.diaVenc=Math.min(28,Math.max(1,+v.diaVenc||10)); v.periodicidade=v.periodicidade||'mensal'; aplicarRateio(v); const nid=await salvar('recorrencias',id,v,id?'editou conta fixa recorrente':'criou conta fixa recorrente'); await gerarRecorrentes(); return nid; }};
 let _gerando=false;
 async function gerarRecorrentes(){
   if(_gerando || !ehEquipe()) return 0; _gerando=true; let n=0;
@@ -1169,8 +1181,8 @@ async function gerarRecorrentes(){
     for(const r of L('recorrencias').filter(r=>r.ativa && r.inicio)){
       let m=r.inicio; const fim=r.fim && r.fim<ate ? r.fim : ate; let guarda=0;
       while(m<=fim && guarda++<120){ const id='rc_'+r.id+'_'+m.replace('-','');
-        if(!Store.docs['contas/'+id]){ const venc=m+'-'+z(Math.min(+r.diaVenc||10,28));
-          try{ await salvar('contas',id,{descricao:r.descricao,centro:r.centro,classe:'fixa',categoria:r.categoria||'Conta fixa',fornecedor:r.fornecedor||'',valor:+r.valor,vencimento:venc,competencia:m,status:'aberta',recorrenciaId:r.id},'gerou conta fixa do mês'); n++; }catch(e){ /* outra pessoa gerou ao mesmo tempo */ } }
+        if(!Store.docs['contas/'+id] && recNoMes(r,m)){ const venc=m+'-'+z(Math.min(+r.diaVenc||10,28));
+          try{ await salvar('contas',id,{descricao:r.descricao,centro:r.centro,classe:'fixa',categoria:r.categoria||'Conta fixa',fornecedor:r.fornecedor||'',valor:+r.valor,vencimento:venc,competencia:m,status:'aberta',recorrenciaId:r.id,...(r.rateio?{rateio:r.rateio,divide:true,centro2:r.centro2,pct1:r.pct1}:{})},'gerou conta fixa do mês'); n++; }catch(e){ /* outra pessoa gerou ao mesmo tempo */ } }
         m=mesMais(m,1); } }
   } finally { _gerando=false; }
   return n;
@@ -1184,7 +1196,7 @@ async function syncConta(origemCol, origemId, d){
   if(!igual) await SCHEMA.contas.save(v,id,ex||null);
 }
 function tabelaContas(cs, comCentro){
-  return tabela([{h:'Vencimento',f:c=>`<span class="${contaVencida(c)?'pill p-bad':''}">${dbr(c.vencimento)}</span>`},...(comCentro?[{h:'Centro de custo',f:c=>centroHTML(c.centro)}]:[]),
+  return tabela([{h:'Vencimento',f:c=>`<span class="${contaVencida(c)?'pill p-bad':''}">${dbr(c.vencimento)}</span>`},...(comCentro?[{h:'Centro de custo',f:c=>rateioHTML(c)}]:[]),
     {h:'Descrição',f:c=>`<b>${esc(c.descricao||'')}</b><br><small class="muted">${esc([c.categoria,c.fornecedor].filter(Boolean).join(' · '))}${c.recorrenciaId?' · <span class="tag">Recorrente</span>':''}${c.origemCol?' · <span class="tag">'+esc({manutencoes:'Da manutenção',documentos:'Do documento',reembolsos:'Do reembolso'}[c.origemCol]||c.origemCol)+'</span>':''}</small>`},
     {h:'Tipo',f:c=>esc(lbl(CLASSE,c.classe))},{h:'Valor',n:1,f:c=>`<b>${money(c.valor)}</b>`},
     {h:'Situação',f:c=>c.status==='paga'?`<span class="pill p-ok">Paga ${dbr(c.pagoEm)}</span>`:c.status==='cancelada'?'<span class="pill">Cancelada</span>':contaVencida(c)?'<span class="pill p-bad">Vencida</span>':'<span class="pill p-warn">A pagar</span>'},
@@ -1193,17 +1205,17 @@ function tabelaContas(cs, comCentro){
     cs,'Nenhuma conta neste período.',c=>`data-act="edit" data-k="contas" data-id="${c.id}"`);
 }
 function filtroCentroHTML(){ const f=S.ui.centro||''; return `<label class="row muted" for="fc_c">Centro de custo <select id="fc_c" class="btn" style="font-weight:500"><option value="">Todos</option>${centroOpts().map(o=>`<option value="${esc(o.v)}"${o.v===f?' selected':''}>${esc(o.v===CENTRO_ADM?'Administrativo':o.l)}</option>`).join('')}</select></label>`; }
-const passaCentro = c => !S.ui.centro || (c.centro||CENTRO_ADM)===S.ui.centro;
+const passaCentro = c => !S.ui.centro || partesConta(c).some(p=>p.centro===S.ui.centro);
 function vContas(classe){
   const m=S.ui.mesC||mesAtual(); const cs=L('contas').filter(c=>(c.classe==='fixa')===(classe==='fixa') && mesDe(c)===m && passaCentro(c)).sort((a,b)=>(a.vencimento||'')<(b.vencimento||'')?-1:1);
   const at=cs.filter(c=>c.status!=='cancelada'); const tot=at.reduce((s,c)=>s+(+c.valor||0),0), pago=at.filter(c=>c.status==='paga').reduce((s,c)=>s+(+c.valor||0),0), venc=at.filter(contaVencida);
   const titulo = classe==='fixa'?'Contas fixas':'Contas variáveis';
   const sub = classe==='fixa'?'Custos que se repetem: seguro, rastreador, parcelas, contador, aluguel. As recorrentes são criadas sozinhas todo mês.':'Custos que variam: manutenção, pneus, peças, reembolsos, despesas avulsas.';
-  const recs = classe==='fixa' ? L('recorrencias').filter(r=>!S.ui.centro||(r.centro||CENTRO_ADM)===S.ui.centro).sort((a,b)=>String(a.descricao).localeCompare(String(b.descricao))) : [];
+  const recs = classe==='fixa' ? L('recorrencias').filter(r=>!S.ui.centro||partesConta(r).some(p=>p.centro===S.ui.centro)).sort((a,b)=>String(a.descricao).localeCompare(String(b.descricao))) : [];
   return head(titulo,sub,`<label class="row muted" for="fc_m">Mês <input id="fc_m" type="month" value="${m}" class="btn" style="font-weight:500"></label>${filtroCentroHTML()}${B('Exportar CSV','csvContas','data-classe="'+classe+'"')}${classe==='fixa'?B('Nova conta recorrente','new','data-k="recorrencias"'):''}${B(classe==='fixa'?'Nova conta fixa avulsa':'Nova conta variável','new','data-k="contas" data-preset=\'{"classe":"'+classe+'"'+(S.ui.centro?',"centro":"'+S.ui.centro+'"':'')+'}\'',1)}`)+
   `<div class="stack"><div class="kpis">${kpi('Total do mês',money(tot),mesbr(m))}${kpi('Pago',money(pago),'')}${kpi('A pagar',money(tot-pago),venc.length?`<em class="neg">${venc.length} vencida(s)</em>`:'')}</div>
   <section><h3>${titulo} de ${mesbr(m)}</h3>${tabelaContas(cs,true)}</section>
-  ${classe==='fixa'?`<section><h3>Contas recorrentes (geradas todo mês)</h3>${tabela([{h:'Descrição',f:r=>`<b>${esc(r.descricao)}</b><br><small class="muted">${esc([r.categoria,r.fornecedor].filter(Boolean).join(' · '))}</small>`},{h:'Centro de custo',f:r=>centroHTML(r.centro)},{h:'Valor mensal',n:1,f:r=>money(r.valor)},{h:'Vence dia',n:1,f:r=>esc(r.diaVenc)},{h:'Período',f:r=>`${mesbr(r.inicio)} – ${r.fim?mesbr(r.fim):'sem fim'}`},{h:'Situação',f:r=>r.ativa?'<span class="pill p-ok">Ativa</span>':'<span class="pill">Pausada</span>'}],recs,'Nenhuma conta recorrente cadastrada.',r=>`data-act="edit" data-k="recorrencias" data-id="${r.id}"`)}</section>`:''}</div>`;
+  ${classe==='fixa'?`<section><h3>Contas recorrentes (geradas todo mês)</h3>${tabela([{h:'Descrição',f:r=>`<b>${esc(r.descricao)}</b><br><small class="muted">${esc([r.categoria,r.fornecedor].filter(Boolean).join(' · '))}</small>`},{h:'Centro de custo',f:r=>rateioHTML(r)},{h:'Valor',n:1,f:r=>money(r.valor)+(r.periodicidade==='anual'?' <small class="muted">por ano</small>':'')},{h:'Vence dia',n:1,f:r=>esc(r.diaVenc)},{h:'Período',f:r=>`${mesbr(r.inicio)} – ${r.fim?mesbr(r.fim):'sem fim'}`},{h:'Situação',f:r=>r.ativa?'<span class="pill p-ok">Ativa</span>':'<span class="pill">Pausada</span>'}],recs,'Nenhuma conta recorrente cadastrada.',r=>`data-act="edit" data-k="recorrencias" data-id="${r.id}"`)}</section>`:''}</div>`;
 }
 function vReceber(){
   const fs=L('faturas').sort((a,b)=>a.competencia<b.competencia?1:a.competencia>b.competencia?-1:((a.criadoEm||'')<(b.criadoEm||'')?1:-1));
@@ -1240,6 +1252,53 @@ function graficoMeses(){
       <rect x="${x+2}" y="${yV}" width="${bw}" height="${yF-yV}" fill="var(--info)"><title>${mesbr(d.m)} · custo variável ${money(d.variavel)}</title></rect>
       <text x="${x}" y="${H-10}" text-anchor="middle" font-size="11" fill="var(--muted)">${mesbr(d.m)}</text>`; }).join('')}</svg>
   <small class="muted">Barra verde: receita das faturas. Barra ao lado: custo fixo (embaixo) e variável (em cima).</small></div>`;
+}
+
+
+/* ---------- rateio entre carros e rendimento mensal de cada carro ---------- */
+function aplicarRateio(v){
+  if(v.divide && v.centro && v.centro!==CENTRO_ADM){
+    if(!v.centro2) throw 'Escolha o outro carro que divide esta conta.';
+    if(v.centro2===v.centro) throw 'O outro carro precisa ser diferente do primeiro.';
+    const p=Math.round(+v.pct1); if(!(p>0&&p<100)) throw 'A porcentagem do primeiro carro precisa ficar entre 1 e 99.';
+    v.pct1=p; v.rateio=[{centro:v.centro,pct:p},{centro:v.centro2,pct:100-p}];
+  } else { v.divide=false; v.rateio=null; v.centro2=null; }
+}
+/* Partes de uma conta (ou recorrência) por centro de custo: dividida entre carros ou inteira num só. */
+function partesConta(c){
+  const total=+c.valor||0;
+  if(Array.isArray(c.rateio) && c.rateio.length>1){ let resto=r2(total); return c.rateio.map((p,i,a)=>{ const val= i===a.length-1 ? resto : r2(total*(+p.pct||0)/100); resto=r2(resto-val); return {centro:p.centro||CENTRO_ADM,pct:+p.pct||0,valor:val}; }); }
+  return [{centro:c.centro||CENTRO_ADM,pct:100,valor:total}];
+}
+const recNoMes = (r,m) => r.periodicidade!=='anual' || m.slice(5,7)===String(r.inicio||'').slice(5,7);
+function rateioHTML(c){ if(!c.rateio) return centroHTML(c.centro); return partesConta(c).map(p=>`${centroHTML(p.centro)} <small class="muted">${p.pct}%</small>`).join('<br>'); }
+/* Quanto o carro rende por mês: o que faturamos nele menos as despesas fixas mensais. */
+function rendimentoVeiculo(id){
+  const m=mesAtual(); const c=contratoDoVeiculo(id); const aluguel=c?(+c.aluguel||0):0;
+  const recs=L('recorrencias').filter(r=>r.ativa && r.inicio && r.inicio<=m && (!r.fim||r.fim>=m));
+  const fixas=[]; for(const r of recs){ const p=partesConta(r).find(x=>x.centro===id); if(!p) continue;
+    fixas.push({r,parte:p.valor,pct:p.pct,mensal:r2(r.periodicidade==='anual'?p.valor/12:p.valor)}); }
+  const totFixas=r2(fixas.reduce((s,x)=>s+x.mensal,0));
+  const ms=[1,2,3].map(n=>mesMais(m,-n)); const passados=ms.map(x=>resumoFin(y=>y===id,y=>y===x));
+  const comRec=passados.filter(p=>p.rec>0); const fatMedia=comRec.length? r2(comRec.reduce((s,p)=>s+p.rec,0)/comRec.length) : null;
+  const comVar=passados.filter(p=>p.rec||p.custo); const varMedia=comVar.length? r2(comVar.reduce((s,p)=>s+p.variavel,0)/comVar.length) : 0;
+  const doMes=resumoFin(y=>y===id,y=>y===m);
+  const v=G('veiculos',id)||{}; const cons = v.aqForma==='consorcio' && +v.csParcela>0 && !fixas.some(x=>/cons[oó]rcio/i.test((x.r.categoria||'')+' '+(x.r.descricao||'')));
+  return {c,aluguel,fixas,totFixas,rende:r2(aluguel-totFixas),rendeComVar:r2(aluguel-totFixas-varMedia),varMedia,fatMedia,fatMes:doMes.rec,doMes,consPendente:cons,csParcela:+v.csParcela||0};
+}
+function rendeHTML(id){
+  const r=rendimentoVeiculo(id); const v=G('veiculos',id)||{};
+  const pre=JSON.stringify({centro:id,classe:'fixa'}).replace(/'/g,'&#39;');
+  const preCons=JSON.stringify({centro:id,descricao:'Parcela do consórcio'+(v.csAdm?' '+v.csAdm:'')+(v.csCota?' · cota '+v.csCota:''),categoria:'Consórcio',fornecedor:v.csAdm||'',valor:r.csParcela}).replace(/'/g,'&#39;');
+  const preSeg=JSON.stringify({centro:id,descricao:'Seguro do carro',categoria:'Seguro'}).replace(/'/g,'&#39;');
+  return `<div class="stack"><div class="kpis">${kpi('Faturamento mensal',money(r.aluguel),r.c?'aluguel do contrato com '+esc(nomeCliente(r.c.clienteId)):'<em class="neg">sem contrato ativo</em>')}${kpi('Despesas fixas por mês',money(r.totFixas),r.fixas.length+' despesa(s)')}${kpi('Rende por mês',`<em class="${r.rende<0?'neg':''}">${money(r.rende)}</em>`,'faturamento − despesas fixas')}${kpi('Rende com variáveis',`<em class="${r.rendeComVar<0?'neg':''}">${money(r.rendeComVar)}</em>`,'descontando a média de '+money(r.varMedia)+' de custos variáveis (3 meses)')}${kpi('Faturado em '+mesbr(mesAtual()),money(r.fatMes),r.fatMedia!=null?'média dos últimos 3 meses: '+money(r.fatMedia):'faturas emitidas')}</div>
+    ${r.consPendente?`<div class="note">O cadastro do carro tem parcela de consórcio de <b>${money(r.csParcela)}</b>, mas ela ainda não está nas despesas fixas. <button class="btn sm pri" data-act="new" data-k="recorrencias" data-preset='${preCons}'>Lançar a parcela do consórcio</button></div>`:''}
+    <section><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h3 style="margin:0">Despesas fixas deste carro</h3><div class="row">${B('Consórcio','new',`data-k="recorrencias" data-preset='${preCons}'`)}${B('Seguro','new',`data-k="recorrencias" data-preset='${preSeg}'`)}${B('Nova despesa fixa','new',`data-k="recorrencias" data-preset='${pre}'`,1)}</div></div>
+    ${tabela([{h:'Despesa',f:x=>`<b>${esc(x.r.descricao)}</b><br><small class="muted">${esc([x.r.categoria,x.r.fornecedor].filter(Boolean).join(' · '))}</small>`},
+      {h:'Valor',n:1,f:x=>money(x.r.valor)+(x.r.periodicidade==='anual'?' <small class="muted">/ano</small>':'')},
+      {h:'Parte deste carro',f:x=>x.r.rateio?`${x.pct}% · dividida com ${esc(x.r.rateio.filter(p=>p.centro!==id).map(p=>centroLbl(p.centro)).join(', '))}`:'100%'},
+      {h:'Por mês',n:1,f:x=>`<b>${money(x.mensal)}</b>`},{h:'Até',f:x=>x.r.fim?mesbr(x.r.fim):'sem fim'}],r.fixas,'Nenhuma despesa fixa cadastrada. Lance o consórcio, o seguro, o rastreador e o que mais se repetir.',x=>`data-act="edit" data-k="recorrencias" data-id="${x.r.id}"`)}</section>
+    <div class="note i">As despesas fixas viram contas a pagar todo mês sozinhas (em Contas fixas), já com o centro de custo do carro. Uma parcela de consórcio que cobre dois carros pode ser dividida entre eles: marque "Dividir com outro carro". Despesas anuais (IPVA, licenciamento) entram aqui divididas por 12.</div></div>`;
 }
 
 /* ===================== painel, clientes e veículos ===================== */
@@ -1336,7 +1395,8 @@ function rentabVeiculo(v){
   const payback = !compra ? null : falta<=0 ? 0 : (med && med>0 ? falta/med : null);
   const c=contratoDoVeiculo(id); const aluguel=c?(+c.aluguel||0):0;
   const meses = v.aqData ? Math.max(1,mesesAte(v.aqData.slice(0,7),mesAtual())) : null;
-  return {v,acc,compra,kmRod,custoKm:kmRod>0?acc.custo/kmRod:null,recKm:kmRod>0?acc.rec/kmRod:null,
+  const rd=rendimentoVeiculo(id);
+  return {v,acc,compra,kmRod,rendeMes:rd.rende,fixasMes:rd.totFixas,custoKm:kmRod>0?acc.custo/kmRod:null,recKm:kmRod>0?acc.rec/kmRod:null,
     roi:compra?acc.res/compra*100:null,med,payback,aluguel,yieldMes:compra&&aluguel?aluguel/compra*100:null,meses,
     parado:!c && statusVeiculo(v)!=='vendido', status:statusVeiculo(v)};
 }
@@ -1354,7 +1414,7 @@ function vRentab(){
     {h:'Resultado acumulado',f:r=>`<div style="min-width:150px"><b style="color:${r.acc.res<0?'var(--danger)':'inherit'}">${money(r.acc.res)}</b>${barra(r.acc.res,mx,r.acc.res<0)}</div>`},
     {h:'Receita',n:1,f:r=>money(r.acc.rec)},{h:'Custos',n:1,f:r=>money(r.acc.custo)},{h:'Margem',n:1,f:r=>pct(r.acc.mg)},
     {h:'Km rodado',n:1,f:r=>r.kmRod?kmf(r.kmRod):'—'},{h:'Custo por km',n:1,f:r=>r.custoKm!=null?money(r.custoKm):'—'},
-    {h:'Aluguel ÷ compra',n:1,f:r=>r.yieldMes!=null?pct(r.yieldMes,2)+'/mês':'—'},{h:'Retorno sobre a compra',n:1,f:r=>pct(r.roi,1)},
+    {h:'Rende por mês',n:1,f:r=>`<b style="color:${r.rendeMes<0?'var(--danger)':'inherit'}">${money(r.rendeMes)}</b><br><small class="muted">fixas ${money(r.fixasMes)}</small>`},{h:'Aluguel ÷ compra',n:1,f:r=>r.yieldMes!=null?pct(r.yieldMes,2)+'/mês':'—'},{h:'Retorno sobre a compra',n:1,f:r=>pct(r.roi,1)},
     {h:'Resultado médio (3 meses)',n:1,f:r=>r.med!=null?money(r.med):'—'},{h:'Falta para se pagar',n:1,f:pb}],
     rs,'Sem dados.',r=>`data-go="veiculo" data-id="${r.v.id}" data-tab="fin"`)}</section>
   <div class="note i"><b>Como ler:</b> "Retorno sobre a compra" é o resultado acumulado dividido pelo que o carro custou. "Falta para se pagar" é uma estimativa: quanto ainda falta do preço de compra, dividido pelo resultado médio dos últimos 3 meses. A revenda futura do carro não entra na conta.</div></div>`;
@@ -1372,7 +1432,7 @@ function fluxoProjetado(n){
       if(fatAtivas().some(f=>f.contratoId===c.id && f.competencia===comp)) continue; l.entPrev+=(+c.aluguel||0); } }
   for(const c of L('contas').filter(c=>c.status==='aberta')){ const l=at(mesVenc(c.vencimento)); if(!l) continue; l.saiContas+=(+c.valor||0); if(contaVencida(c)) l.atrasoS+=(+c.valor||0); }
   for(const r of L('recorrencias').filter(r=>r.ativa && r.inicio)){
-    for(const l of linhas){ if(l.m<r.inicio || (r.fim && l.m>r.fim)) continue; if(Store.docs['contas/rc_'+r.id+'_'+l.m.replace('-','')]) continue; l.saiRec+=(+r.valor||0); } }
+    for(const l of linhas){ if(l.m<r.inicio || (r.fim && l.m>r.fim) || !recNoMes(r,l.m)) continue; if(Store.docs['contas/rc_'+r.id+'_'+l.m.replace('-','')]) continue; l.saiRec+=(+r.valor||0); } }
   let acc=0; for(const l of linhas){ l.ent=l.entFat+l.entPrev; l.sai=l.saiContas+l.saiRec; l.saldo=l.ent-l.sai; acc+=l.saldo; l.acc=acc; }
   return linhas;
 }
@@ -1477,7 +1537,7 @@ function agLimpo(col,d){
     o[k]=typeof v==='string'&&v.length>300?v.slice(0,300)+'…':v; }
   if(d.veiculoId) o.placa=PL(d.veiculoId); if(d.clienteId && col!=='clientes') o.cliente=nomeCliente(d.clienteId);
   if(d.condutorId||d.condutorNome) o.condutor=nomeCondutor(d);
-  if(col==='contas'||col==='recorrencias') o.centroCusto=centroLbl(d.centro);
+  if(col==='contas'||col==='recorrencias'){ o.centroCusto=d.rateio?partesConta(d).map(p=>centroLbl(p.centro)+' '+p.pct+'%').join(' + '):centroLbl(d.centro); delete o.rateio; }
   if(col==='veiculos'){ o.kmAtual=kmAtual(d); o.situacao=VSTATUS[statusVeiculo(d)]||statusVeiculo(d); const c=contratoDoVeiculo(d.id); if(c){ o.cliente=nomeCliente(c.clienteId); o.contratoId=c.id; }
     const u=usoAberto(d.id); if(u) o.emUsoPor=nomeCondutor(u);
     if(ehGestor()) for(const k of Object.keys(o)) if(/^(aq|cs|vd)/.test(k)) delete o[k]; }
@@ -1488,7 +1548,7 @@ function agConsultar(a){
   const col=a.colecao; if(!agColecoes().includes(col)) return {erro:'Coleção não disponível para este usuário: '+col};
   let ds=agLC(col).slice();
   if(a.veiculo){ const v=agVeic(a.veiculo); if(!v) return {erro:'Veículo não encontrado: '+a.veiculo};
-    ds = col==='veiculos' ? ds.filter(d=>d.id===v.id) : col==='contas'||col==='recorrencias' ? ds.filter(d=>d.centro===v.id) : ds.filter(d=>d.veiculoId===v.id); }
+    ds = col==='veiculos' ? ds.filter(d=>d.id===v.id) : col==='contas'||col==='recorrencias' ? ds.filter(d=>partesConta(d).some(p=>p.centro===v.id)) : ds.filter(d=>d.veiculoId===v.id); }
   if(a.cliente && !ehGestor()){ const c=agCli(a.cliente); if(!c) return {erro:'Cliente não encontrado: '+a.cliente};
     ds = col==='clientes'? ds.filter(d=>d.id===c.id) : col==='veiculos' ? ds.filter(d=>{const k=contratoDoVeiculo(d.id); return k&&k.clienteId===c.id;}) : ds.filter(d=>d.clienteId===c.id); }
   if(a.status) ds=ds.filter(d=>String(d.status||d.statusRepasse||'')===a.status);
@@ -1524,7 +1584,10 @@ function agIndicador(a){
     const out={centroCusto:v?PL(v.id):a.veiculo?'Administrativo':'Empresa toda',mes:mesbr(mes),doMes:r(m=>m===mes),ultimos6Meses:meses.map(m=>({mes:mesbr(m),...r(x=>x===m)})),acumulado:r(()=>true)};
     if(!a.veiculo) out.porCentroDoMes=[...L('veiculos').map(x=>x.id),CENTRO_ADM].map(c=>({centro:centroLbl(c),...(q=>({receita:q.rec,custo:q.custo,resultado:q.res}))(resumoFin(x=>x===c,m=>m===mes))})).filter(x=>x.receita||x.custo);
     return out; }
-  if(t==='rentabilidade') return linhasRentab().filter(r=>!a.veiculo||(agVeic(a.veiculo)||{}).id===r.v.id).map(r=>({placa:PL(r.v.id),modelo:r.v.modelo,situacao:VSTATUS[r.status]||r.status,receitaAcumulada:Math.round(r.acc.rec),custosAcumulados:Math.round(r.acc.custo),resultadoAcumulado:Math.round(r.acc.res),precoCompra:r.compra,retornoSobreCompraPct:r.roi!=null?Math.round(r.roi*10)/10:null,kmRodado:r.kmRod,custoPorKm:r.custoKm!=null?Math.round(r.custoKm*100)/100:null,aluguel:r.aluguel,aluguelSobreCompraPctMes:r.yieldMes!=null?Math.round(r.yieldMes*100)/100:null,resultadoMedio3Meses:r.med!=null?Math.round(r.med):null,mesesParaSePagar:r.payback!=null?Math.round(r.payback):null,semContrato:r.parado}));
+  if(t==='rendimento'){ const vs=(a.veiculo?[agVeic(a.veiculo)].filter(Boolean):L('veiculos').filter(v=>statusVeiculo(v)!=='vendido'));
+    if(a.veiculo&&!vs.length) return {erro:'Veículo não encontrado.'};
+    return vs.map(v=>{ const r=rendimentoVeiculo(v.id); return {placa:PL(v.id),cliente:r.c?nomeCliente(r.c.clienteId):null,faturamentoMensal:r.aluguel,despesasFixas:r.fixas.map(x=>({descricao:x.r.descricao,categoria:x.r.categoria,valorTotal:+x.r.valor,periodicidade:x.r.periodicidade||'mensal',parteDoCarroPct:x.pct,porMes:x.mensal})),totalFixasPorMes:r.totFixas,rendePorMes:r.rende,mediaVariaveis3Meses:r.varMedia,rendeComVariaveis:r.rendeComVar,faturadoNoMes:r.fatMes,mediaFaturada3Meses:r.fatMedia,parcelaConsorcioSemLancar:r.consPendente?r.csParcela:null}; }); }
+  if(t==='rentabilidade') return linhasRentab().filter(r=>!a.veiculo||(agVeic(a.veiculo)||{}).id===r.v.id).map(r=>({placa:PL(r.v.id),modelo:r.v.modelo,situacao:VSTATUS[r.status]||r.status,receitaAcumulada:Math.round(r.acc.rec),custosAcumulados:Math.round(r.acc.custo),resultadoAcumulado:Math.round(r.acc.res),precoCompra:r.compra,retornoSobreCompraPct:r.roi!=null?Math.round(r.roi*10)/10:null,kmRodado:r.kmRod,custoPorKm:r.custoKm!=null?Math.round(r.custoKm*100)/100:null,aluguel:r.aluguel,aluguelSobreCompraPctMes:r.yieldMes!=null?Math.round(r.yieldMes*100)/100:null,resultadoMedio3Meses:r.med!=null?Math.round(r.med):null,mesesParaSePagar:r.payback!=null?Math.round(r.payback):null,semContrato:r.parado,faturamentoMensal:r.aluguel,despesasFixasMensais:r.fixasMes,rendePorMes:r.rendeMes}));
   if(t==='fluxo_caixa') return {aviso:'Previsão; não considera saldo em banco, reajustes ou custos não lançados.',meses:fluxoProjetado(+a.meses||6).map(l=>({mes:mesbr(l.m),faturasEmAberto:Math.round(l.entFat),atrasadasNoMes:Math.round(l.atrasoE),alugueisAFaturar:Math.round(l.entPrev),contasAPagar:Math.round(l.saiContas),fixasRecorrentes:Math.round(l.saiRec),saldoDoMes:Math.round(l.saldo),saldoAcumulado:Math.round(l.acc)}))};
   if(t==='clientes_risco') return riscoClientes().map(r=>({cliente:r.cl.nome,risco:NIVEL[r.nivel][1],carros:r.ka.length,aluguelMensal:r.mensal,participacaoPct:Math.round(r.share),receita12Meses:Math.round(r.rec12),emAtraso:r.vAtr,diasAtraso:r.dias,pagaNoPrazoPct:r.pont!=null?Math.round(r.pont):null,contratosTerminando:r.vence.map(c=>({placa:PL(c.veiculoId),fim:dbr(c.fim)})),multasARepassar:r.vMultas,chamadosAbertos:r.chs.length,motivos:r.motivos}));
   return {erro:'Indicador desconhecido: '+t};
@@ -1566,14 +1629,14 @@ function agValorTxt(f,v){ if(f.k==='centro') return centroLbl(v); if(f.t==='ref'
 /* ---------- ferramentas que o modelo pode usar ---------- */
 function agTools(){
   const cols=agColecoes(); const forms=Object.keys(agForms());
-  const ind=ehGestor()?['visao_geral','franquia_km','combustivel','pendencias']:agFin()?['visao_geral','resultado','rentabilidade','fluxo_caixa','clientes_risco','franquia_km','combustivel','pendencias']:['visao_geral','franquia_km','combustivel','pendencias'];
+  const ind=ehGestor()?['visao_geral','franquia_km','combustivel','pendencias']:agFin()?['visao_geral','resultado','rendimento','rentabilidade','fluxo_caixa','clientes_risco','franquia_km','combustivel','pendencias']:['visao_geral','franquia_km','combustivel','pendencias'];
   const t=[
     {name:'consultar_dados',description:'Lista registros do sistema com filtros. Use para responder perguntas sobre carros, contratos, abastecimentos, chamados, contas etc. Retorna total, somas e até 80 registros.',
       input_schema:{type:'object',properties:{colecao:{type:'string',enum:cols},veiculo:{type:'string',description:'placa ou parte dela'},cliente:{type:'string',description:'nome do cliente'},texto:{type:'string',description:'busca livre'},status:{type:'string'},desde:{type:'string',description:'AAAA-MM-DD ou AAAA-MM'},ate:{type:'string',description:'AAAA-MM-DD ou AAAA-MM'},limite:{type:'integer'}},required:['colecao']}},
-    {name:'indicadores',description:'Números calculados pelo sistema (os mesmos das telas). visao_geral: resumo da empresa; resultado: receita, custo fixo/variável e resultado por mês (veiculo = placa ou "adm"); rentabilidade: por carro desde a compra; fluxo_caixa: previsão dos próximos meses; clientes_risco: concentração e inadimplência; franquia_km: consumo das franquias; combustivel: litros e gasto do mês; pendencias: avisos do painel.',
+    {name:'indicadores',description:'Números calculados pelo sistema (os mesmos das telas). visao_geral: resumo da empresa; resultado: receita, custo fixo/variável e resultado por mês (veiculo = placa ou "adm"); rendimento: quanto cada carro rende por mês (faturamento menos despesas fixas, como consórcio e seguro); rentabilidade: por carro desde a compra; fluxo_caixa: previsão dos próximos meses; clientes_risco: concentração e inadimplência; franquia_km: consumo das franquias; combustivel: litros e gasto do mês; pendencias: avisos do painel.',
       input_schema:{type:'object',properties:{tipo:{type:'string',enum:ind},mes:{type:'string',description:'AAAA-MM'},veiculo:{type:'string'},meses:{type:'integer'}},required:['tipo']}},
     {name:'abrir_tela',description:'Leva a pessoa para uma tela do sistema (ex.: a ficha de um carro).',
-      input_schema:{type:'object',properties:{tela:{type:'string',enum:ehGestor()?['inicio','contratos','uso','abast','manut','chamados','faturas','multas','condutores','veiculo']:['painel','clientes','cliente','veiculos','veiculo','receber','fixas','variaveis','resultado','config','auditoria'].filter(v=>['cliente','veiculo'].includes(v)||pode(v))},veiculo:{type:'string',description:'placa, para tela veiculo'},cliente:{type:'string',description:'nome, para tela cliente'},aba:{type:'string',description:'para veiculo: resumo|contrato|uso|km|abast|vist|manut|chamados|docs|multas|fin|historico; para painel: geral|rentab|caixa|clientes'}},required:['tela']}},
+      input_schema:{type:'object',properties:{tela:{type:'string',enum:ehGestor()?['inicio','contratos','uso','abast','manut','chamados','faturas','multas','condutores','veiculo']:['painel','clientes','cliente','veiculos','veiculo','receber','fixas','variaveis','resultado','config','melhorias','auditoria'].filter(v=>['cliente','veiculo'].includes(v)||pode(v))},veiculo:{type:'string',description:'placa, para tela veiculo'},cliente:{type:'string',description:'nome, para tela cliente'},aba:{type:'string',description:'para veiculo: resumo|rende|contrato|uso|km|abast|vist|manut|chamados|docs|multas|fin|historico; para painel: geral|rentab|caixa|clientes'}},required:['tela']}},
     {name:'preparar_registro',description:'Prepara um formulário já preenchido para a pessoa conferir e salvar. NUNCA grava sozinho. Tipos: '+forms.map(k=>`${k} = ${agForms()[k]}`).join('; ')+'. Campos de cada tipo estão no contexto.',
       input_schema:{type:'object',properties:{tipo:{type:'string',enum:forms},campos:{type:'object',description:'chave do campo → valor'},resumo:{type:'string',description:'uma frase dizendo o que será lançado'}},required:['tipo','campos','resumo']}}];
   if(agFin()) t.push({name:'pagar_conta',description:'Marca uma conta a pagar como paga (a pessoa confirma com um clique). Descubra o id com consultar_dados (colecao contas, status aberta).',input_schema:{type:'object',properties:{conta_id:{type:'string'},data_pagamento:{type:'string',description:'AAAA-MM-DD; vazio = hoje'}},required:['conta_id']}});
@@ -1652,7 +1715,7 @@ async function agEnviar(txt){
       AG.msgs.push({role:'assistant',content});
       for(const b of content) if(b.type==='text' && b.text.trim()) AG.ui.push({de:'ag',txt:b.text});
       const uses=content.filter(b=>b.type==='tool_use'); if(!uses.length) break;
-      AG.ui.push({de:'sis',txt:uses.map(u=>({consultar_dados:'Consultando '+((u.input||{}).colecao||'dados'),indicadores:({visao_geral:'Lendo o resumo da empresa',resultado:'Calculando o resultado',rentabilidade:'Calculando a rentabilidade',fluxo_caixa:'Calculando o fluxo de caixa',clientes_risco:'Analisando os clientes',franquia_km:'Vendo as franquias de km',combustivel:'Somando o combustível',pendencias:'Vendo as pendências'})[(u.input||{}).tipo]||'Calculando',abrir_tela:'Abrindo a tela',preparar_registro:'Preparando o registro',alterar_registro:'Preparando a alteração',excluir_registro:'Preparando a exclusão',acao_sistema:'Preparando a ação',sugerir_melhoria:'Anotando uma sugestão de melhoria',pagar_conta:'Preparando o pagamento'}[u.name]||u.name)).join(' · ')}); agDesenhar();
+      AG.ui.push({de:'sis',txt:uses.map(u=>({consultar_dados:'Consultando '+((u.input||{}).colecao||'dados'),indicadores:({visao_geral:'Lendo o resumo da empresa',resultado:'Calculando o resultado',rentabilidade:'Calculando a rentabilidade',fluxo_caixa:'Calculando o fluxo de caixa',clientes_risco:'Analisando os clientes',franquia_km:'Vendo as franquias de km',rendimento:'Calculando quanto o carro rende',combustivel:'Somando o combustível',pendencias:'Vendo as pendências'})[(u.input||{}).tipo]||'Calculando',abrir_tela:'Abrindo a tela',preparar_registro:'Preparando o registro',alterar_registro:'Preparando a alteração',excluir_registro:'Preparando a exclusão',acao_sistema:'Preparando a ação',sugerir_melhoria:'Anotando uma sugestão de melhoria',pagar_conta:'Preparando o pagamento'}[u.name]||u.name)).join(' · ')}); agDesenhar();
       const res=[]; for(const u of uses){ let out; try{ out=await agExec(u); }catch(ex){ out={erro:errMsg(ex)}; } res.push({type:'tool_result',tool_use_id:u.id,content:JSON.stringify(out).slice(0,40000)}); }
       AG.msgs.push({role:'user',content:res});
       if(i===7) AG.ui.push({de:'ag',txt:'Parei aqui para não demorar demais. Pode me pedir para continuar.'});
@@ -1870,7 +1933,7 @@ document.addEventListener('click', async e=>{
       csv(`contas-${cl}-${m}.csv`,cs,[['Vencimento',c=>dbr(c.vencimento)],['Centro de custo',c=>centroLbl(c.centro)],['Descrição',c=>c.descricao],['Categoria',c=>c.categoria||''],['Fornecedor',c=>c.fornecedor||''],['Tipo',c=>lbl(CLASSE,c.classe)],['Valor (R$)',c=>nf(c.valor,2)],['Situação',c=>c.status],['Pago em',c=>dbr(c.pagoEm)]]); }
     else if(a==='copiarMelhorias'){ const t=textoMelhorias(); let ok=false; try{ await navigator.clipboard.writeText(t); ok=true; }catch(x){}
       if(ok) toast('Lista copiada. Cole na conversa com o Claude para implementar.'); else { const dlg=$('#dlg'); dlg.innerHTML=`<form><div class="dh"><h2>Lista de melhorias</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc"><p class="muted" style="margin-top:0">Selecione tudo e copie.</p><textarea readonly style="width:100%;min-height:320px">${esc(t)}</textarea></div></form>`; dlg.querySelector('[data-close]').onclick=()=>dlg.close(); dlg.showModal(); } }
-    else if(a==='csvRentab') csv(`rentabilidade-${hoje()}.csv`,linhasRentab(),[['Placa',r=>PL(r.v.id)],['Modelo',r=>r.v.modelo||''],['Situação',r=>VSTATUS[r.status]||r.status],['Receita acumulada',r=>nf(r.acc.rec,2)],['Custos acumulados',r=>nf(r.acc.custo,2)],['Resultado acumulado',r=>nf(r.acc.res,2)],['Preço de compra',r=>nf(r.compra,2)],['Retorno sobre a compra (%)',r=>r.roi!=null?nf(r.roi,1):''],['Km rodado',r=>r.kmRod],['Custo por km',r=>r.custoKm!=null?nf(r.custoKm,2):''],['Aluguel ÷ compra (%/mês)',r=>r.yieldMes!=null?nf(r.yieldMes,2):''],['Resultado médio 3 meses',r=>r.med!=null?nf(r.med,2):''],['Meses para se pagar',r=>r.payback!=null?nf(r.payback,0):'']]);
+    else if(a==='csvRentab') csv(`rentabilidade-${hoje()}.csv`,linhasRentab(),[['Placa',r=>PL(r.v.id)],['Modelo',r=>r.v.modelo||''],['Situação',r=>VSTATUS[r.status]||r.status],['Receita acumulada',r=>nf(r.acc.rec,2)],['Custos acumulados',r=>nf(r.acc.custo,2)],['Resultado acumulado',r=>nf(r.acc.res,2)],['Preço de compra',r=>nf(r.compra,2)],['Retorno sobre a compra (%)',r=>r.roi!=null?nf(r.roi,1):''],['Km rodado',r=>r.kmRod],['Custo por km',r=>r.custoKm!=null?nf(r.custoKm,2):''],['Aluguel ÷ compra (%/mês)',r=>r.yieldMes!=null?nf(r.yieldMes,2):''],['Resultado médio 3 meses',r=>r.med!=null?nf(r.med,2):''],['Rende por mês (aluguel − fixas)',r=>nf(r.rendeMes,2)],['Despesas fixas por mês',r=>nf(r.fixasMes,2)],['Meses para se pagar',r=>r.payback!=null?nf(r.payback,0):'']]);
     else if(a==='centroAdm'){ S.ui.centro=CENTRO_ADM; go('variaveis'); }
     else if(a==='sairVerComo') sairVerComo();
     else if(a==='pvtab'){ S.p.vtab=el.dataset.tab||'resumo'; render(); }
