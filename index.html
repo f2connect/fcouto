@@ -201,6 +201,11 @@ details summary{cursor:pointer}
 
 .kpi b .kpitx{white-space:normal;font-size:18px;line-height:1.2;display:block;overflow-wrap:anywhere}
 .vcard .rende{display:block;border-top:1px solid var(--line);padding-top:6px;margin-top:2px}
+.ctprev{background:#fff;color:#111;border:1px solid var(--line);border-radius:8px;padding:26px 30px;font-family:Arial,Helvetica,sans-serif;font-size:13.5px;line-height:1.5}
+.ctprev h1{font-size:17px;text-align:center;margin:0 0 14px}.ctprev h2{font-size:15px;margin:18px 0 6px}.ctprev h3{font-size:13.5px;margin:14px 0 4px}
+.ctprev p{margin:0 0 7px;text-align:justify}.ctprev ul{margin:0 0 7px 20px;padding:0}.ctprev table{border-collapse:collapse;width:100%;font-size:12.5px;margin:6px 0 12px}
+.ctprev th,.ctprev td{border:1px solid #aaa;padding:5px 7px;vertical-align:top;text-align:left}.ctprev th{background:#eee}.ctprev mark{background:#fff3a0;color:#111}
+@media (max-width:600px){.ctprev{padding:16px 14px}}
 .hbar{height:6px;background:var(--surface-2);border-radius:3px;margin-top:4px;overflow:hidden}.hbar i{display:block;height:100%;border-radius:3px}
 #agbtn{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:40;display:flex;align-items:center;gap:8px;background:var(--accent);color:var(--accent-fg);border:0;border-radius:999px;padding:12px 18px 12px 15px;font:inherit;font-weight:600;font-size:15px;box-shadow:0 6px 22px rgba(0,0,0,.22);cursor:pointer}
 #agbtn:hover{filter:brightness(1.07)} #agbtn[hidden],#agpan[hidden]{display:none}
@@ -414,7 +419,8 @@ function consumo(c, refISO){
   const lv=ls.filter(l=>l.status==='verificada'); const baseV=kmBase(c,p.ini,true); const conf=lv.length? Math.max(0, Math.max(...lv.map(l=>+l.km))-baseV) : 0;
   const pacs=pacotesPeriodo(c,p); const pacKm=pacs.reduce((s,k)=>s+(+k.km||0),0);
   const semLimite = !c.kmContratado;
-  const limite = semLimite ? null : (+c.kmContratado + pacKm);
+  const cum = (!semLimite && c.periodicidade==='cumulativa') ? saldoCumulativo(c, ref) : null; const acumulado = cum ? cum.acumE : 0;
+  const limite = semLimite ? null : (+c.kmContratado + pacKm + acumulado); const limiteConf = semLimite ? null : (+c.kmContratado + pacKm + (cum ? cum.acumC : 0));
   const pct = limite ? est/limite*100 : null;
   // projeção pelo ritmo dos últimos N dias
   const desde=addDias(ref,-P.diasProjecao);
@@ -423,7 +429,7 @@ function consumo(c, refISO){
   const restantes=Math.max(0,diff(ref,p.fim)); const projFim = ritmo!=null ? est + ritmo*restantes : null;
   const excProj = (limite!=null && projFim!=null) ? Math.max(0, projFim-limite) : null;
   let dataEsgota=null; if(limite!=null && ritmo>0){ const falta=limite-est; dataEsgota = falta<=0 ? ref : addDias(ref, Math.ceil(falta/ritmo)); }
-  return {p, est, conf, pacKm, limite, pct, saldo: limite!=null? limite-est : null, ritmo, projFim, excProj, custoExcProj: excProj!=null? excProj*(+c.valorKmExcedente||0) : null, dataEsgota, semLimite};
+  return {p, est, conf, pacKm, limite, limiteConf, acumulado, pct, saldo: limite!=null? limite-est : null, ritmo, projFim, excProj, custoExcProj: excProj!=null? excProj*(+c.valorKmExcedente||0) : null, dataEsgota, semLimite};
 }
 function kmBarHTML(c){
   const k=consumo(c); if(!k) return '';
@@ -432,7 +438,7 @@ function kmBarHTML(c){
   return `<div class="kmbar" title="Consumo estimado no período ${dbr(k.p.ini)}–${dbr(k.p.fim)}">
     <div class="lbl"><span>${nf(k.est)} / ${nf(k.limite)} km</span><span>${nf(k.pct)}%</span></div>
     <div class="trk"><div class="fil ${cls}" style="width:${pct}%"></div></div>
-    <div class="lbl"><span>Saldo ${kmf(k.saldo)}</span><span>${k.excProj>0?'Previsão de excedente: '+kmf(k.excProj):k.dataEsgota?'Esgota ~'+dbr(k.dataEsgota):'Sem previsão'}</span></div></div>`;
+    <div class="lbl"><span>Saldo ${kmf(k.saldo)}${k.acumulado?' · inclui '+kmf(k.acumulado)+' acumulados':''}</span><span>${k.excProj>0?'Previsão de excedente: '+kmf(k.excProj):k.dataEsgota?'Esgota ~'+dbr(k.dataEsgota):'Sem previsão'}</span></div></div>`;
 }
 function condutorSugerido(vid, dataHora){
   if(!dataHora) return null;
@@ -508,10 +514,12 @@ async function syncLanc(origemCol, origemId, desejados){
 
 /* ===================== esquemas de formulário ===================== */
 const opt = arr => arr.map(([v,l])=>({v,l}));
+const MODALIDADES=[['mensal','Mensal (prazo indeterminado, renova mês a mês)'],['semestral','Semestral (6 meses)'],['anual','Anual (12 meses)'],['24m','24 meses']];
+const MOD_MESES={semestral:6,anual:12,'24m':24};
 const SCHEMA = {
   clientes:{col:'clientes', titulo:'Cliente', fields:[
     {k:'nome',l:'Razão social / nome',req:1,full:1},{k:'tipo',l:'Tipo',t:'sel',opts:opt([['PJ','Pessoa jurídica'],['PF','Pessoa física']]),def:'PJ'},{k:'documento',l:'CNPJ / CPF'},
-    {k:'contato',l:'Gestor responsável'},{k:'telefone',l:'Telefone'},{k:'email',l:'E-mail'},{k:'endereco',l:'Endereço',full:1},{k:'obs',l:'Observações',t:'area',full:1}]},
+    {k:'contato',l:'Gestor responsável (frota)'},{k:'representante',l:'Representante legal (assina o contrato)'},{k:'cargoRep',l:'Cargo do representante'},{k:'cpfRep',l:'CPF do representante'},{k:'telefone',l:'Telefone'},{k:'email',l:'E-mail'},{k:'endereco',l:'Endereço',full:1},{k:'obs',l:'Observações',t:'area',full:1}]},
   condutores:{col:'condutores', titulo:'Condutor', fields:[
     {k:'clienteId',l:'Cliente',t:'ref',ref:'clientes',req:1},{k:'nome',l:'Nome',req:1},{k:'cpf',l:'CPF'},{k:'telefone',l:'Telefone'},
     {k:'cnh',l:'Nº da CNH'},{k:'cnhValidade',l:'Validade da CNH',t:'date'},{k:'status',l:'Situação',t:'sel',opts:opt([['pendente','Pendente de aprovação'],['aprovado','Aprovado'],['bloqueado','Bloqueado']]),def:'aprovado'},
@@ -540,16 +548,34 @@ const SCHEMA = {
   contratos:{col:'contratos', titulo:'Contrato', fields:[
     {k:'clienteId',l:'Cliente',t:'ref',ref:'clientes',req:1},{k:'veiculoId',l:'Veículo',t:'ref',ref:'veiculos',req:1,filter:v=>statusVeiculo(v)!=='vendido'},
     {k:'plano',l:'Modelo de plano (opcional)',t:'plano',full:1,hint:'Preenche prazo, franquia e preços. Você pode alterar qualquer valor depois.'},
-    {sec:'Vigência e valores'},{k:'inicio',l:'Início',t:'date',req:1},{k:'prazoMeses',l:'Prazo (meses)',t:'num'},{k:'fim',l:'Término',t:'date',hint:'Se vazio, calcula pelo prazo.'},
-    {k:'aluguel',l:'Aluguel mensal (R$)',t:'money',req:1},{k:'diaVenc',l:'Dia de vencimento',t:'num',def:10},{k:'caucao',l:'Caução (R$)',t:'money'},
-    {k:'reajIndice',l:'Índice de reajuste',def:'IPCA'},{k:'reajData',l:'Data do reajuste',t:'date'},{k:'multaRescisoria',l:'Multa rescisória',hint:'Ex.: 3 aluguéis ou diferença de tarifa do prazo'},
-    {sec:'Quilometragem'},{k:'kmContratado',l:'Km contratado',t:'num',req:1,hint:'Use 0 para contrato sem limite.'},{k:'periodicidade',l:'Periodicidade da franquia',t:'sel',opts:opt([['mensal','Mensal'],['total','Total do contrato']]),def:'mensal'},
+    {sec:'Plano e vigência'},
+    {k:'modalidade',l:'Plano',t:'sel',opts:opt(MODALIDADES),req:1,def:'anual',onChange:(f,val)=>{ const p=f.querySelector('#f_prazoMeses'); if(p) p.value=MOD_MESES[val]||''; const fi=f.querySelector('#f_fim'); if(fi) fi.value=''; }},
+    {k:'inicio',l:'Início',t:'date',req:1},{k:'prazoMeses',l:'Prazo (meses)',t:'num',def:12,show:v=>v.modalidade!=='mensal'},{k:'fim',l:'Término',t:'date',hint:'Se vazio, calcula pelo prazo.',show:v=>v.modalidade!=='mensal'},
+    {k:'dataAssinatura',l:'Data da assinatura',t:'date',defFn:hoje},{k:'numero',l:'Número do contrato',hint:'Vazio = gerado sozinho (F2-ano-sequência).'},
+    {sec:'Valores'},{k:'aluguel',l:'Aluguel mensal (R$)',t:'money',req:1},{k:'diaVenc',l:'Dia de vencimento',t:'num',def:10},
+    {k:'vencRef',l:'O aluguel vence no mês',t:'sel',opts:opt([['seguinte','Seguinte ao de uso'],['uso','De uso (antecipado)']]),def:'seguinte'},{k:'caucao',l:'Caução (R$)',t:'money'},
+    {k:'reajIndice',l:'Índice de reajuste',def:'IPCA'},{k:'reajData',l:'Data do reajuste',t:'date'},{k:'multaAtraso',l:'Multa por atraso (%)',t:'num',step:'0.1',def:2},
+    {k:'multaRescisoria',l:'Multa rescisória',def:'30% dos aluguéis que faltam até o término',full:1,show:v=>v.modalidade!=='mensal'},
+    {sec:'Quilometragem'},{k:'kmContratado',l:'Franquia de km por mês',t:'num',req:1,hint:'Use 0 para contrato sem limite.'},
+    {k:'periodicidade',l:'Tipo de franquia',t:'sel',opts:opt([['cumulativa','Mensal cumulativa (o km não usado passa para o mês seguinte)'],['mensal','Mensal, não cumulativa'],['total','Total do contrato']]),def:'cumulativa'},
     {k:'kmInicial',l:'Km do veículo na assinatura',t:'num',req:1},{k:'valorKmExcedente',l:'Valor do km excedente (R$)',t:'money'},
+    {k:'valorKmExcedente2',l:'Km excedente acima de 30% da franquia (R$)',t:'money',hint:'Vazio = mesmo valor do km excedente.'},
     {k:'pacotesTxt',l:'Pacotes de km adicional oferecidos',full:1,hint:'Formato: km=preço, separados por vírgula. Ex.: 500=350, 1000=650'},
-    {sec:'Outras condições'},{k:'carencia',l:'Carência para desconto de dias parados (dias)',t:'num',defFn:()=>cfg().carenciaPadrao},
-    {k:'status',l:'Situação',t:'sel',opts:opt([['ativo','Ativo'],['encerrado','Encerrado']]),def:'ativo'},
+    {sec:'Uso, seguro e taxas'},{k:'finalidade',l:'Finalidade de uso',def:'apoio à fiscalização de empreendimentos',full:1},{k:'regiao',l:'Região de uso',def:'Minas Gerais'},
+    {k:'valorReferencia',l:'Valor de referência do carro (FIPE, R$)',t:'money'},{k:'seguradora',l:'Seguradora'},
+    {k:'franquiaSinistro',l:'Franquia de sinistro: danos ao carro (R$)',t:'money'},{k:'franquiaRoubo',l:'Franquia de sinistro: roubo, furto ou perda total (R$)',t:'money'},
+    {k:'coberturaTerceiros',l:'Cobertura de danos a terceiros (R$)',t:'money'},
+    {k:'despesasLocataria',l:'Despesas pagas pelo cliente',t:'area',full:1,hint:'Vazio = padrão: combustível, óleo e filtro, lavagem, pedágios e estacionamentos; planos anual e 24 meses incluem alinhamento e balanceamento.'},
+    {k:'taxaMulta',l:'Taxa por multa de trânsito (R$)',t:'money',def:50},{k:'combustivelPct',l:'Acréscimo no combustível faltante (%)',t:'num',def:20},
+    {k:'limpeza',l:'Limpeza especial (R$)',t:'money',def:150},{k:'atrasoDevolucao',l:'Atraso na devolução (valor por dia)',def:'1/20 do aluguel mensal'},
+    {k:'limiteEmergencia',l:'Limite de emergência sem autorização (R$)',t:'money',defFn:()=>cfg().limiteEmergencia},
+    {k:'carencia',l:'Dias parados antes do desconto (culpa da F2)',t:'num',defFn:()=>cfg().carenciaPadrao},
+    {k:'localDevolucao',l:'Local de entrega e devolução',def:'Av. Nossa Senhora de Fátima, 6939, Gameleira, Belo Horizonte/MG',full:1},
+    {sec:'Outras condições'},{k:'status',l:'Situação',t:'sel',opts:opt([['ativo','Ativo'],['encerrado','Encerrado']]),def:'ativo'},
     {k:'condicoes',l:'Condições especiais',t:'area',full:1},{k:'pdf',l:'Contrato assinado (PDF)',t:'file',accept:'application/pdf',full:1}],
     async save(v,id,antes){
+      if(v.modalidade==='mensal'){ v.prazoMeses=null; v.fim=null; v.multaRescisoria=''; } else if(!v.prazoMeses && MOD_MESES[v.modalidade]) v.prazoMeses=MOD_MESES[v.modalidade];
+      if(!v.numero){ const ano=(v.inicio||hoje()).slice(0,4); const seq=Math.max(0,...L('contratos').map(c=>{ const m=String(c.numero||'').match(new RegExp('^F2-'+ano+'-(\\d+)$')); return m?+m[1]:0; })); v.numero='F2-'+ano+'-'+String(seq+1).padStart(3,'0'); }
       if(!v.fim && v.prazoMeses && v.inicio){ const d=new Date(v.inicio+'T12:00'); d.setMonth(d.getMonth()+(+v.prazoMeses)); d.setDate(d.getDate()-1); v.fim=isoD(d); }
       if(v.fim && v.fim<v.inicio) throw 'O término não pode ser antes do início.';
       v.kmContratado = +v.kmContratado||0;
@@ -837,7 +863,9 @@ function propostaFatura(c, comp){
       const gaps=L('usos').some(u=>u.veiculoId===c.veiculoId && u.kmSemCondutor>0 && !u.gapResolvido && u.inicio.slice(0,10)>=k.p.ini && u.inicio.slice(0,10)<=k.p.fim);
       const susp=L('leituras').some(l=>l.veiculoId===c.veiculoId && l.suspeita && !l.excluido && l.data.slice(0,10)>=k.p.ini && l.data.slice(0,10)<=k.p.fim);
       if(!lvFim.length || gaps || susp){ bloqueado=true; avisos.push(`Excedente bloqueado: ${!lvFim.length?'falta leitura verificada no fim do período':''}${gaps?' · há km sem condutor registrado':''}${susp?' · há leitura suspeita':''}. Resolva antes de emitir.`); }
-      else { const exc=Math.max(0,k.conf-k.limite); if(exc>0) itens.push({tipo:'excedente',natureza:'receita',desc:`Km excedente: ${nf(exc)} km × ${money(c.valorKmExcedente)}`,valor:r2(exc*(+c.valorKmExcedente||0))}); }
+      else { const exc=Math.max(0,k.conf-(k.limiteConf??k.limite)); if(exc>0){ const v1=+c.valorKmExcedente||0, v2=+c.valorKmExcedente2||0; const faixa=v2&&c.kmContratado?Math.min(exc,Math.round(+c.kmContratado*0.3)):exc;
+          itens.push({tipo:'excedente',natureza:'receita',desc:`Km excedente: ${nf(faixa)} km × ${money(v1)}`,valor:r2(faixa*v1)});
+          if(exc>faixa) itens.push({tipo:'excedente',natureza:'receita',desc:`Km excedente acima de 30% da franquia: ${nf(exc-faixa)} km × ${money(v2)}`,valor:r2((exc-faixa)*v2)}); } }
     }
   }
   for(const mu of L('multas').filter(x=>x.veiculoId===c.veiculoId && x.statusRepasse==='a_repassar' && +x.valor>0 && x.dataHora.slice(0,10)>=c.inicio && x.dataHora.slice(0,10)<=fim)) itens.push({tipo:'multa',natureza:'repasse',desc:`Repasse de multa ${mu.auto||''} (${dbr(mu.dataHora)})`,valor:+mu.valor,refCol:'multas',refId:mu.id});
@@ -903,10 +931,10 @@ const vCell = id => { const v=G('veiculos',id); return v? placaHTML(v) : '—'; 
 
 /* ===================== views ===================== */
 const NAV = [
-  ['grp','Operação'],['painel','Painel'],['clientes','Clientes'],['veiculos','Veículos'],
+  ['grp','Operação'],['painel','Painel'],['clientes','Clientes'],['veiculos','Veículos'],['contratos','Contratos'],
   ['grp','Financeiro'],['receber','Contratos a receber'],['fixas','Contas fixas'],['variaveis','Contas variáveis'],['resultado','Resultado'],
   ['grp','Sistema'],['config','Configurações'],['melhorias','Melhorias'],['auditoria','Auditoria']];
-const PERM={admin:'*',operacional:['painel','clientes','cliente','veiculos','veiculo','melhorias'],financeiro:['painel','clientes','cliente','veiculos','veiculo','receber','fixas','variaveis','resultado','melhorias']};
+const PERM={admin:'*',operacional:['painel','clientes','cliente','veiculos','veiculo','contratos','melhorias'],financeiro:['painel','clientes','cliente','veiculos','veiculo','contratos','receber','fixas','variaveis','resultado','melhorias']};
 const pode = v => !!S.me && (PERM[S.me.perfil]==='*' || (PERM[S.me.perfil]||[]).includes(v));
 function renderNav(al){
   const cur = S.route.view==='veiculo'?'veiculos':S.route.view==='cliente'?'clientes':S.route.view;
@@ -928,10 +956,8 @@ function vCard(v){
     ${c?kmBarHTML(c):''}${pode('resultado')?(()=>{ const r=rendimentoVeiculo(v.id); return `<small class="rende">Rende <b class="${r.rende<0?'neg':''}">${money(r.rende)}</b>/mês · fixas ${money(r.totFixas)}</small>`; })():''}</button>`;
 }
 function tabelaContratos(cs){
-  return tabela([{h:'Veículo',f:c=>vCell(c.veiculoId)},{h:'Cliente',f:c=>esc(nomeCliente(c.clienteId))+isEx(c)},{h:'Vigência',f:c=>`${dbr(c.inicio)} – ${dbr(c.fim)}${c.prazoMeses?`<br><small class="muted">${c.prazoMeses} meses</small>`:''}`},{h:'Aluguel',n:1,f:c=>money(c.aluguel)},{h:'Franquia',f:c=>c.kmContratado?`${nf(c.kmContratado)} km ${c.periodicidade==='total'?'no total':'/mês'}`:'Sem limite'},{h:'Consumo',f:c=>contratoAtivo(c)?`<div style="min-width:160px">${kmBarHTML(c)}</div>`:'—'},{h:'PDF',f:c=>arq(c.pdf)},{h:'Situação',f:c=>contratoAtivo(c)?'<span class="pill p-ok">Ativo</span>':c.status==='encerrado'?'<span class="pill">Encerrado</span>':c.inicio>hoje()?'<span class="pill p-info">Futuro</span>':'<span class="pill p-warn">Vencido</span>'}],cs,'Nenhum contrato.',c=>`data-act="edit" data-k="contratos" data-id="${c.id}"`);
+  return tabela([{h:'Veículo',f:c=>vCell(c.veiculoId)},{h:'Cliente',f:c=>esc(nomeCliente(c.clienteId))+isEx(c)},{h:'Vigência',f:c=>`${dbr(c.inicio)} – ${dbr(c.fim)}${c.prazoMeses?`<br><small class="muted">${c.prazoMeses} meses</small>`:''}`},{h:'Aluguel',n:1,f:c=>money(c.aluguel)},{h:'Franquia',f:c=>c.kmContratado?`${nf(c.kmContratado)} km ${c.periodicidade==='total'?'no total':c.periodicidade==='cumulativa'?'/mês cumulativa':'/mês'}`:'Sem limite'},{h:'Consumo',f:c=>contratoAtivo(c)?`<div style="min-width:160px">${kmBarHTML(c)}</div>`:'—'},{h:'Assinado',f:c=>c.pdf?arq(c.pdf):'—'},{h:'Documento',f:c=>`<button class="btn sm" data-act="docContrato" data-id="${c.id}" data-stop>Gerar</button>`},{h:'Situação',f:c=>contratoAtivo(c)?'<span class="pill p-ok">Ativo</span>':c.status==='encerrado'?'<span class="pill">Encerrado</span>':c.inicio>hoje()?'<span class="pill p-info">Futuro</span>':'<span class="pill p-warn">Vencido</span>'}],cs,'Nenhum contrato.',c=>`data-act="edit" data-k="contratos" data-id="${c.id}"`);
 }
-function vContratos(){ const cs=L('contratos').sort((a,b)=>a.inicio<b.inicio?1:-1); return head('Contratos','Um contrato por veículo, com franquia de km própria.',`${B('Pacote de km','new','data-k="pacotes"')}${B('Novo contrato','new','data-k="contratos"',1)}`)+tabelaContratos(cs)+
-  `<h3 style="margin-top:22px">Pacotes de km adicional</h3>`+tabela([{h:'Contrato',f:k=>esc(refLabel('contratos',G('contratos',k.contratoId)))},{h:'Km',n:1,f:k=>kmf(k.km)},{h:'Preço',n:1,f:k=>money(k.preco)},{h:'Solicitado',f:k=>dtbr(k.solicitadoEm)},{h:'Situação',f:k=>`<span class="pill ${k.status==='aprovado'?'p-ok':k.status==='faturado'?'p-info':k.status==='recusado'?'p-bad':'p-warn'}">${esc(k.status)}</span>`},{h:'',f:k=>k.status==='solicitado'?`<button class="btn sm" data-act="aprovarPacote" data-id="${k.id}" data-stop>Aprovar</button> <button class="btn sm danger" data-act="recusarPacote" data-id="${k.id}" data-stop>Recusar</button>`:''}],L('pacotes').sort((a,b)=>(a.solicitadoEm||'')<(b.solicitadoEm||'')?1:-1),'Nenhum pacote solicitado.',k=>`data-act="edit" data-k="pacotes" data-id="${k.id}"`); }
 function tabelaUsos(us){ return tabela([{h:'Veículo',f:u=>vCell(u.veiculoId)},{h:'Condutor',f:u=>`<b>${esc(nomeCondutor(u))}</b>${u.retroativo?' <span class="tag">Retroativo</span>':''}${u.registradoAposEvento?' <span class="pill p-warn">Registrado após o evento</span>':''}`},{h:'Início',f:u=>dtbr(u.inicio)},{h:'Fim',f:u=>u.fim?dtbr(u.fim):'<span class="pill p-info">Em uso</span>'},{h:'Km',n:1,f:u=>`${kmf(u.kmInicial)}${u.kmFinal!=null?' → '+kmf(u.kmFinal):''}`},{h:'Rodado',n:1,f:u=>u.kmFinal!=null&&u.kmInicial!=null?kmf(u.kmFinal-u.kmInicial):'—'},{h:'Observações',f:u=>{const o=[u.obsInicio,u.obsFim,u.justificativa].filter(Boolean).map(esc).join(' · '); const g=u.kmSemCondutor>0?`<span class="pill ${u.gapResolvido?'':'p-warn'}">${kmf(u.kmSemCondutor)} sem condutor</span>${u.gapResolvido?'':` <button class="btn sm" data-act="resolverGap" data-id="${u.id}">Marcar resolvido</button>`}`:''; return (u.status==='encerrado_forcado'?'<span class="tag">Encerrado forçado</span> ':'')+o+(g?' '+g:'');}},{h:'Fotos e local',f:usoAnexos}],us,'Nenhum uso registrado.'); }
 function vUso(){
   const vs=L('veiculos').filter(v=>statusVeiculo(v)!=='vendido'); const us=L('usos').sort((a,b)=>a.inicio<b.inicio?1:-1).slice(0,80);
@@ -968,7 +994,7 @@ function vFaturas(){ return head('Faturas','A fatura guarda as condições do co
 function tabelaLanc(ls){ return tabela([{h:'Competência',f:l=>dbr(l.competencia)},{h:'Veículo',f:l=>l.veiculoId?vCell(l.veiculoId):'<span class="muted">Geral</span>'},{h:'Natureza',f:l=>esc(lbl(LC_T,l.tipo))},{h:'Categoria',f:l=>esc(l.categoria)},{h:'Descrição',f:l=>esc(l.descricao||'')+(l.estornoDe?' <span class="tag">Estorno</span>':'')+(l.estornado?' <span class="tag">Estornado</span>':'')+(l.origemCol?` <small class="muted">· origem: ${esc(l.origemCol)}</small>`:' <small class="muted">· manual</small>')},{h:'Caixa',f:l=>dbr(l.dataCaixa)},{h:'Valor',n:1,f:l=>`<span style="color:${+l.valor<0?'var(--danger)':'inherit'}">${money(l.valor)}</span>`},{h:'',f:l=>!l.origemCol&&!l.estornado&&!l.estornoDe?`<button class="btn sm" data-act="estornar" data-id="${l.id}">Estornar</button>`:''}],ls,'Nenhum lançamento.'); }
 function vConfig(){
   const P=cfg();
-  return head('Configurações','Parâmetros, matriz de responsabilidade, modelos de plano, usuários e backup.')+
+  return head('Configurações','Parâmetros, matriz de responsabilidade, usuários e backup.')+
   `<div class="stack"><form class="card" id="cfgf"><h3>Parâmetros</h3><div class="fgrid">
     <div class="fld"><label for="c_al">Alertas de franquia (%)</label><input id="c_al" value="${esc(P.alertasKm.join(', '))}"><span class="hint">Separados por vírgula</span></div>
     <div class="fld"><label for="c_hc">Lembrete de check-in aberto (horas)</label><input id="c_hc" type="number" value="${P.horasCheckin}"></div>
@@ -982,9 +1008,7 @@ function vConfig(){
     <div class="fld"><label for="c_pak">Avisar quando faltar (km)</label><input id="c_pak" type="number" value="${P.prevAvisoKm}"></div><div class="fld"><label for="c_pad">Avisar quando faltar (dias)</label><input id="c_pad" type="number" value="${P.prevAvisoDias}"></div></div>
     <h3 style="margin-top:16px">Matriz de responsabilidade de custos</h3><div class="fgrid">${CATS.map(c=>`<div class="fld"><label for="mz_${c[0]}">${esc(c[1])}</label><select id="mz_${c[0]}">${ARCA.slice(0,3).map(a=>`<option value="${a[0]}"${arcaPadrao(c[0])===a[0]?' selected':''}>${esc(a[1])}</option>`).join('')}</select></div>`).join('')}</div>
     <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn pri" type="submit">Salvar parâmetros</button></div></form>
-  <section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Modelos de plano</h3>${B('Novo modelo','novoPlano')}</div>
-    <p class="muted" style="margin:0 0 10px">Combinam prazo e franquia. Preenchem o contrato e podem ser alterados nele; mudar um modelo não altera contratos existentes.</p>
-    ${tabela([{h:'Nome',f:p=>esc(p.nome||'—')},{h:'Prazo',n:1,f:p=>p.prazo+' meses'},{h:'Franquia',n:1,f:p=>nf(p.km)+' km/mês'},{h:'Aluguel',n:1,f:p=>money(p.aluguel)},{h:'Km excedente',n:1,f:p=>money(p.kmExc)},{h:'Pacotes',f:p=>esc(p.pacotes||'—')},{h:'',f:(p)=>`<button class="btn sm danger" data-act="delPlano" data-i="${P.planos.indexOf(p)}">Remover</button>`}],P.planos,'Nenhum modelo cadastrado.')}</section>
+  <div class="note i">Os modelos de plano e o texto do contrato agora ficam no menu <b>Contratos</b>.</div>
   ${secUsuarios()}${secDados()}</div>`;
 }
 function vAuditoria(){
@@ -1052,9 +1076,9 @@ function vVeiculo(id){
       ${v.vdData?`<div><dt>Venda</dt><dd>${dbr(v.vdData)} · ${money(v.vdValor)}${v.vdComprador?' · '+esc(v.vdComprador):''}</dd></div>`:''}</dl>${v.obs?`<p class="muted">${esc(v.obs)}</p>`:''}</div></div>`;
   } else if(t==='contrato'){
     const pk=c?L('pacotes').filter(k=>k.contratoId===c.id):[];
-    body=`<div class="stack">${c?`<div class="card stack"><div class="row" style="justify-content:space-between"><h2>Contrato vigente</h2><div class="row">${c.pdf?`<button class="btn" data-file="${esc(c.pdf)}">Abrir PDF assinado</button>`:'<span class="pill p-warn">PDF não anexado</span>'}${B('Editar','edit','data-k="contratos" data-id="'+c.id+'"')}</div></div>
+    body=`<div class="stack">${c?`<div class="card stack"><div class="row" style="justify-content:space-between"><h2>Contrato vigente</h2><div class="row">${c.pdf?`<button class="btn" data-file="${esc(c.pdf)}">Abrir PDF assinado</button>`:'<span class="pill p-warn">Assinado não anexado</span>'}${B('Editar','edit','data-k="contratos" data-id="'+c.id+'"')}${B('Documento para assinar','docContrato','data-id="'+c.id+'"',1)}</div></div>
       <dl class="info"><div><dt>Cliente</dt><dd>${esc(nomeCliente(c.clienteId))}</dd></div><div><dt>Vigência</dt><dd>${dbr(c.inicio)} – ${dbr(c.fim)}</dd></div><div><dt>Prazo</dt><dd>${c.prazoMeses?c.prazoMeses+' meses':'—'}</dd></div><div><dt>Aluguel</dt><dd>${money(c.aluguel)} · vence dia ${esc(c.diaVenc||'—')}</dd></div><div><dt>Reajuste</dt><dd>${esc(c.reajIndice||'—')} · ${dbr(c.reajData)}</dd></div><div><dt>Caução</dt><dd>${money(c.caucao)}</dd></div>
-      <div><dt>Km contratado</dt><dd>${c.kmContratado?nf(c.kmContratado)+' km '+(c.periodicidade==='total'?'no total':'por mês'):'Sem limite'}</dd></div><div><dt>Km na assinatura</dt><dd>${kmf(c.kmInicial)}</dd></div><div><dt>Km excedente</dt><dd>${money(c.valorKmExcedente)}/km</dd></div><div><dt>Pacotes oferecidos</dt><dd>${(c.pacotesOferta||[]).map(p=>nf(p.km)+' km = '+money(p.preco)).join('<br>')||'—'}</dd></div><div><dt>Multa rescisória</dt><dd>${esc(c.multaRescisoria||'—')}</dd></div><div><dt>Carência dias parados</dt><dd>${esc(c.carencia??0)} dia(s)</dd></div></dl>
+      <div><dt>Km contratado</dt><dd>${c.kmContratado?nf(c.kmContratado)+' km '+(c.periodicidade==='total'?'no total':c.periodicidade==='cumulativa'?'por mês (cumulativa)':'por mês'):'Sem limite'}</dd></div><div><dt>Número</dt><dd>${esc(c.numero||'—')}</dd></div><div><dt>Km na assinatura</dt><dd>${kmf(c.kmInicial)}</dd></div><div><dt>Km excedente</dt><dd>${money(c.valorKmExcedente)}/km</dd></div><div><dt>Pacotes oferecidos</dt><dd>${(c.pacotesOferta||[]).map(p=>nf(p.km)+' km = '+money(p.preco)).join('<br>')||'—'}</dd></div><div><dt>Multa rescisória</dt><dd>${esc(c.multaRescisoria||'—')}</dd></div><div><dt>Carência dias parados</dt><dd>${esc(c.carencia??0)} dia(s)</dd></div></dl>
       ${c.condicoes?`<p class="muted" style="margin:0">${esc(c.condicoes)}</p>`:''}${kmBarHTML(c)}
       <div class="row" style="justify-content:space-between"><h3 style="margin:0">Pacotes de km adicional</h3>${B('Registrar pedido de pacote','new','data-k="pacotes" data-preset=\'{"contratoId":"'+c.id+'"}\'')}</div>
       ${tabela([{h:'Km',n:1,f:k=>kmf(k.km)},{h:'Preço',n:1,f:k=>money(k.preco)},{h:'Situação',f:k=>esc(k.status)},{h:'Aprovado',f:k=>dtbr(k.aprovadoEm)},{h:'',f:k=>k.status==='solicitado'?`<button class="btn sm" data-act="aprovarPacote" data-id="${k.id}">Aprovar</button> <button class="btn sm danger" data-act="recusarPacote" data-id="${k.id}">Recusar</button>`:''}],pk,'Nenhum pacote.')}</div>`
@@ -1636,7 +1660,7 @@ function agTools(){
     {name:'indicadores',description:'Números calculados pelo sistema (os mesmos das telas). visao_geral: resumo da empresa; resultado: receita, custo fixo/variável e resultado por mês (veiculo = placa ou "adm"); rendimento: quanto cada carro rende por mês (faturamento menos despesas fixas, como consórcio e seguro); rentabilidade: por carro desde a compra; fluxo_caixa: previsão dos próximos meses; clientes_risco: concentração e inadimplência; franquia_km: consumo das franquias; combustivel: litros e gasto do mês; pendencias: avisos do painel.',
       input_schema:{type:'object',properties:{tipo:{type:'string',enum:ind},mes:{type:'string',description:'AAAA-MM'},veiculo:{type:'string'},meses:{type:'integer'}},required:['tipo']}},
     {name:'abrir_tela',description:'Leva a pessoa para uma tela do sistema (ex.: a ficha de um carro).',
-      input_schema:{type:'object',properties:{tela:{type:'string',enum:ehGestor()?['inicio','contratos','uso','abast','manut','chamados','faturas','multas','condutores','veiculo']:['painel','clientes','cliente','veiculos','veiculo','receber','fixas','variaveis','resultado','config','melhorias','auditoria'].filter(v=>['cliente','veiculo'].includes(v)||pode(v))},veiculo:{type:'string',description:'placa, para tela veiculo'},cliente:{type:'string',description:'nome, para tela cliente'},aba:{type:'string',description:'para veiculo: resumo|rende|contrato|uso|km|abast|vist|manut|chamados|docs|multas|fin|historico; para painel: geral|rentab|caixa|clientes'}},required:['tela']}},
+      input_schema:{type:'object',properties:{tela:{type:'string',enum:ehGestor()?['inicio','contratos','uso','abast','manut','chamados','faturas','multas','condutores','veiculo']:['painel','clientes','cliente','veiculos','veiculo','contratos','receber','fixas','variaveis','resultado','config','melhorias','auditoria'].filter(v=>['cliente','veiculo'].includes(v)||pode(v))},veiculo:{type:'string',description:'placa, para tela veiculo'},cliente:{type:'string',description:'nome, para tela cliente'},aba:{type:'string',description:'para veiculo: resumo|rende|contrato|uso|km|abast|vist|manut|chamados|docs|multas|fin|historico; para painel: geral|rentab|caixa|clientes'}},required:['tela']}},
     {name:'preparar_registro',description:'Prepara um formulário já preenchido para a pessoa conferir e salvar. NUNCA grava sozinho. Tipos: '+forms.map(k=>`${k} = ${agForms()[k]}`).join('; ')+'. Campos de cada tipo estão no contexto.',
       input_schema:{type:'object',properties:{tipo:{type:'string',enum:forms},campos:{type:'object',description:'chave do campo → valor'},resumo:{type:'string',description:'uma frase dizendo o que será lançado'}},required:['tipo','campos','resumo']}}];
   if(agFin()) t.push({name:'pagar_conta',description:'Marca uma conta a pagar como paga (a pessoa confirma com um clique). Descubra o id com consultar_dados (colecao contas, status aberta).',input_schema:{type:'object',properties:{conta_id:{type:'string'},data_pagamento:{type:'string',description:'AAAA-MM-DD; vazio = hoje'}},required:['conta_id']}});
@@ -1834,6 +1858,7 @@ function agAcoes(){
     A.verificar_leitura={d:'marca uma leitura de km como verificada pela F2 (id)',prep:c=>{ const l=reg('leituras',c.id); return {titulo:'Verificar leitura de km',linhas:[`${PL(l.veiculoId)} · ${kmf(l.km)} · ${dtbr(l.data)}`]}; }, run:async c=>{ await salvar('leituras',c.id,{status:'verificada',verificadoPor:S.uid},'verificou leitura'); return 'Leitura verificada.'; }};
     A.revisar_vistoria={d:'marca uma vistoria como revisada (id)',prep:c=>{ const x=reg('vistorias',c.id); return {titulo:'Marcar vistoria como revisada',linhas:[`${PL(x.veiculoId)} · ${dtbr(x.criadoEm||x.data)} · ${x.condutorNome||''}`]}; }, run:async c=>{ await salvar('vistorias',c.id,{status:'revisada',revisadoPor:S.uid,revisadoEm:agISO()},'revisou vistoria'); return 'Vistoria revisada.'; }};
     A.confirmar_condutor_multa={d:'confirma quem dirigia numa multa (id da multa, texto = nome)',prep:c=>{ const m=reg('multas',c.id); if(!c.texto) throw 'Informe o nome do condutor.'; return {titulo:'Confirmar condutor da multa',linhas:[`Auto ${m.auto||'—'} · ${PL(m.veiculoId)} · ${dtbr(m.dataHora)}`,'Condutor: '+c.texto]}; }, run:async c=>{ await salvar('multas',c.id,{condutorConfirmado:c.texto},'confirmou condutor'); return 'Condutor confirmado.'; }};
+    A.documento_contrato={d:'abre o contrato preenchido de um carro para conferir e baixar em Word ou PDF (veiculo)',abre:1,prep:c=>{ const v=veic(c); const k=L('contratos').filter(x=>x.veiculoId===v.id&&x.status!=='encerrado').sort((x,y)=>x.inicio<y.inicio?1:-1)[0]; if(!k) throw 'Contrato não encontrado para '+PL(v.id); c.cid=k.id; return {titulo:'Documento do contrato',linhas:[(k.numero||'')+' · '+PL(v.id)+' · '+nomeCliente(k.clienteId)]}; }, run:c=>abrirDocContrato(c.cid)};
     A.check_in={d:'abre o check-in de um carro (veiculo)',abre:1,prep:c=>{ const v=veic(c); c.vid=v.id; return {titulo:'Check-in',linhas:[vLbl(v)]}; }, run:c=>openCheckin(c.vid)};
     A.check_out={d:'abre o checkout de um carro (veiculo)',abre:1,prep:c=>{ const v=veic(c); if(!usoAberto(v.id)) throw 'Este carro não tem check-in aberto.'; c.vid=v.id; return {titulo:'Checkout',linhas:[vLbl(v)]}; }, run:c=>openCheckout(c.vid)};
   }
@@ -1891,6 +1916,450 @@ function textoMelhorias(){ const ms=L('melhorias').filter(m=>['aprovada','nova',
   const ord={aprovada:0,em_andamento:1,nova:2};
   return 'Melhorias do F2 Conect para implementar ('+dbr(hoje())+'):\n\n'+ms.sort((a,b)=>ord[a.status]-ord[b.status]).map((m,i)=>`${i+1}. [${lbl(MEL_ST,m.status)} · prioridade ${m.prioridade||'media'} · ${lbl(MEL_AREAS,m.area)}] ${m.titulo}${m.descricao?'\n   O que mudar: '+m.descricao:''}${m.motivo?'\n   Por quê: '+m.motivo:''}${m.resposta?'\n   Decisão: '+m.resposta:''}${+m.vezes>1?'\n   Apareceu '+m.vezes+' vezes':''}${m.clienteNome?'\n   Pedido de: '+m.clienteNome:''}`).join('\n\n'); }
 
+/* ===================== documento do contrato: modelo, preenchimento, Word e PDF ===================== */
+/* Marcação do modelo: "# " título, "## " seção, "### " cláusula, "- " item de lista, linhas "| a | b |" viram tabela,
+   **negrito**, {{campo}} é preenchido pelo sistema, {{#campo}}…{{/campo}} só aparece quando o campo vale sim
+   e {{^campo}}…{{/campo}} só quando vale não. */
+const CT_CAMPOS=[['numero','Número do contrato'],['locataria','Razão social do cliente'],['cnpj','CNPJ / CPF do cliente'],['endereco','Endereço do cliente'],['representante','Representante legal do cliente'],['cargo','Cargo do representante'],['cpfRepresentante','CPF do representante'],['email','E-mail do cliente'],['whatsapp','Telefone / WhatsApp do cliente'],['responsavelFrota','Responsável pela frota no cliente'],
+  ['veiculo','Marca e modelo'],['ano','Ano de fabricação/modelo'],['placa','Placa'],['cor','Cor'],['renavam','RENAVAM'],['chassi','Chassi'],['combustivel','Combustível'],['valorReferencia','Valor de referência (FIPE)'],
+  ['finalidade','Finalidade de uso'],['regiao','Região de uso'],['plano','Plano marcado'],['inicio','Data de início'],['termino','Data de término'],['aluguel','Aluguel mensal'],['aluguelExtenso','Aluguel por extenso'],
+  ['franquiaKm','Franquia de km'],['franquiaTipo','Tipo de franquia'],['kmExcedente','Valor do km excedente'],['kmExcedente2','Km excedente acima de 30%'],['diaVencimento','Dia de vencimento'],['mesVencimento','Mês do vencimento'],['indice','Índice de reajuste'],
+  ['caucao','Caução'],['despesas','Despesas da locatária'],['seguradora','Seguradora'],['franquiaSinistro','Franquia de sinistro: danos'],['franquiaRoubo','Franquia de sinistro: roubo, furto ou perda total'],['coberturaTerceiros','Cobertura de terceiros'],
+  ['multaRescisoria','Multa rescisória'],['multaAtraso','Multa por atraso (%)'],['taxaMulta','Taxa por multa de trânsito'],['combustivelPct','Acréscimo no combustível faltante (%)'],['limpeza','Limpeza especial'],['atrasoDevolucao','Diária de atraso na devolução'],
+  ['limiteEmergencia','Limite de emergência'],['carencia','Dias para desconto de carro parado'],['localDevolucao','Local de entrega e devolução'],['condicoes','Condições especiais'],['pacotes','Pacotes de km adicional'],['dataAssinatura','Data da assinatura']];
+const CT_OPCIONAIS=['condicoes','pacotes','chassi','responsavelFrota','cargo','cpfRepresentante'];
+const CT_MODELO_PADRAO = `# CONTRATO DE LOCAÇÃO DE VEÍCULO Nº {{numero}}
+
+## PARTE A — QUADRO-RESUMO
+
+Este quadro reúne os dados deste contrato. As Condições Gerais (Parte B) se referem a ele pelo número do item.
+
+| Item | Campo | Preenchimento |
+| 1 | LOCADORA | F2 CARLOC LTDA, CNPJ 59.104.631/0001-01, Av. Nossa Senhora de Fátima, 6939, Gameleira, Belo Horizonte/MG, representada por Felipe Linhares Couto |
+| 2 | LOCATÁRIA | {{locataria}}, CNPJ/CPF {{cnpj}}, {{endereco}}, representada por {{representante}}, {{cargo}}, CPF {{cpfRepresentante}} |
+| 3 | Contatos para avisos | E-mail {{email}} · WhatsApp {{whatsapp}} · responsável pela frota {{responsavelFrota}} |
+| 4 | Veículo | {{veiculo}}, ano {{ano}}, placa {{placa}}, cor {{cor}}, combustível {{combustivel}}, RENAVAM {{renavam}}, chassi {{chassi}} · valor de referência (FIPE): {{valorReferencia}} |
+| 5 | Finalidade e região de uso | {{finalidade}} · {{regiao}} |
+| 6 | Plano | {{plano}} |
+| 7 | Início e término | Início {{inicio}} · término {{termino}} |
+| 8 | Aluguel mensal | {{aluguel}} ({{aluguelExtenso}}) |
+| 9 | Franquia de km | {{franquiaKm}} {{franquiaTipo}} |
+| 10 | Km excedente | {{kmExcedente}} por km{{#cumulativa}} rodado além do saldo acumulado{{/cumulativa}} · no que passar de 30% da franquia mensal: {{kmExcedente2}} por km |
+| 11 | Vencimento e pagamento | Todo dia {{diaVencimento}} do mês {{mesVencimento}} · PIX chave CNPJ 59.104.631/0001-01 ou boleto |
+| 12 | Reajuste | A cada 12 meses, pelo {{indice}} |
+| 13 | Caução | {{caucao}} |
+| 14 | Despesas da LOCATÁRIA | {{despesas}} |
+| 15 | Seguro e franquia de sinistro | Seguradora {{seguradora}} · franquia de sinistro paga pela LOCATÁRIA, por ocorrência: danos ao veículo {{franquiaSinistro}} · roubo, furto ou perda total {{franquiaRoubo}} · danos a terceiros cobertos até {{coberturaTerceiros}} |
+| 16 | Multa rescisória (planos com prazo) | {{multaRescisoria}} |
+| 17 | Taxas | Por multa de trânsito: {{taxaMulta}} · combustível faltante: preço de bomba + {{combustivelPct}} · limpeza especial: {{limpeza}} · atraso na devolução: {{atrasoDevolucao}} por dia · despesa de emergência sem autorização: até {{limiteEmergencia}} |
+| 18 | Carro parado (culpa da LOCADORA) | Desconto a partir de {{carencia}} dia(s) seguidos sem carro substituto |
+| 19 | Local de entrega e devolução | {{localDevolucao}} |
+| 20 | Condições especiais | {{condicoes}} |
+
+## PARTE B — CONDIÇÕES GERAIS
+
+### CLÁUSULA 1 – FORMAÇÃO DO CONTRATO E DEFINIÇÕES
+
+1.1. Este contrato é formado pelo Quadro-resumo (Parte A), por estas Condições Gerais (Parte B) e pelos Anexos. Havendo diferença entre eles, prevalece o Quadro-resumo.
+
+1.2. Para este contrato: **Condutor** é o empregado ou preposto da LOCATÁRIA cadastrado no sistema F2 Conect; **Sistema F2 Conect** é a plataforma da LOCADORA para registro de uso, quilometragem, abastecimentos, vistorias, chamados e faturas; **Valor de referência** é o valor do veículo no item 4.
+
+### CLÁUSULA 2 – OBJETO
+
+2.1. A LOCADORA dá em locação à LOCATÁRIA o veículo do item 4, de sua propriedade, para a finalidade e a região do item 5.
+
+2.2. O veículo é entregue com documento (CRLV digital), chave, estepe, macaco, chave de roda e triângulo, conforme o Laudo de Vistoria de Entrega (Anexo I), com fotos, quilometragem e nível de combustível, assinado pelas partes.
+
+2.3. A LOCADORA pode substituir o veículo por outro de categoria igual ou superior, com aviso prévio, mantidas as demais condições.
+
+### CLÁUSULA 3 – PRAZO E PLANOS
+
+3.1. **Plano mensal:** prazo indeterminado, renovado automaticamente a cada mês. Qualquer parte pode encerrar com aviso escrito de 30 dias, sem multa.
+
+3.2. **Planos semestral, anual e de 24 meses:** prazo determinado, conforme o item 7. Se nenhuma parte se manifestar por escrito até 30 dias antes do término, o contrato se prorroga por igual período, com o reajuste da cláusula 5.
+
+3.3. A permanência do veículo com a LOCATÁRIA após o término, sem prorrogação, segue a cláusula 14.
+
+### CLÁUSULA 4 – PREÇO E QUILOMETRAGEM
+
+4.1. A LOCATÁRIA paga o aluguel mensal do item 8.
+
+4.2. A franquia de km é a do item 9. A quilometragem é apurada pelo odômetro, pelos registros de uso (check-in e checkout) no Sistema F2 Conect, pelas vistorias e pelo rastreador. Em divergência, prevalece o odômetro conferido em vistoria.
+
+{{#cumulativa}}4.3. A franquia é cumulativa: o km não usado em um mês passa para os meses seguintes, dentro da vigência. Todo mês é apurado o saldo (franquia acumulada menos km rodados). Se o saldo ficar negativo, o km excedente é cobrado pelos valores do item 10 na fatura seguinte e o saldo volta a zero. O saldo não usado no fim do contrato ou na prorrogação não gera crédito nem devolução.{{/cumulativa}}{{^cumulativa}}4.3. O km acima da franquia é cobrado pelos valores do item 10, na fatura seguinte à apuração. Km não usado não acumula e não gera crédito.{{/cumulativa}}
+
+4.4. A LOCATÁRIA pode contratar pacotes de km adicional pelos valores do Anexo II, pedidos pelo Sistema F2 Conect.
+
+4.5. O primeiro e o último mês são cobrados proporcionalmente aos dias de locação.
+
+4.6. Se o odômetro for adulterado ou o rastreador desligado ou retirado, a LOCADORA estimará a quilometragem pela média registrada e a LOCATÁRIA pagará multa de 10% do valor de referência, sem prejuízo da rescisão.
+
+### CLÁUSULA 5 – PAGAMENTO, REAJUSTE E TRIBUTOS
+
+5.1. A LOCADORA emite fatura mensal com aluguel, km excedente, pacotes, repasses e demais valores deste contrato, com o vencimento e a forma de pagamento do item 11.
+
+5.2. Em atraso, incidem multa de {{multaAtraso}}, juros de 1% ao mês proporcionais aos dias, correção pelo índice do item 12 e, se a cobrança for feita por advogado, honorários de 10% sobre o débito.
+
+5.3. Com atraso acima de 15 dias, a LOCADORA pode, após notificação, suspender o uso do veículo, exigir sua devolução em 48 horas e incluir o débito em cadastros de proteção ao crédito. Atraso acima de 30 dias permite a rescisão da cláusula 15.3.
+
+5.4. O aluguel e os valores dos itens 10 e 17 são reajustados a cada 12 meses pelo índice do item 12. Se o índice deixar de existir, aplica-se o IPCA.
+
+5.5. A LOCADORA pode emitir boleto, nota de cobrança ou duplicata, ceder seus créditos e cobrá-los por qualquer meio legal.
+
+5.6. Retenções de tributos só serão feitas quando exigidas por lei para a operação e destacadas no documento de cobrança.
+
+### CLÁUSULA 6 – CAUÇÃO
+
+6.1. Na assinatura, a LOCATÁRIA paga a caução do item 13, que não rende juros.
+
+6.2. A LOCADORA pode usar a caução para cobrir valores em aberto; a LOCATÁRIA a recompõe em até 5 dias úteis.
+
+6.3. A caução é devolvida em até 30 dias após a devolução do veículo e a quitação de todos os valores, descontados os débitos.
+
+### CLÁUSULA 7 – USO DO VEÍCULO
+
+7.1. Só podem dirigir Condutores com CNH válida e categoria adequada, cadastrados no Sistema F2 Conect antes do primeiro uso. A LOCATÁRIA responde pelos atos dos Condutores como se fossem seus.
+
+7.2. Cada uso deve ser registrado no Sistema F2 Conect (check-in e checkout, com km). O uso sem registro é de responsabilidade da LOCATÁRIA.
+
+7.3. É proibido: sublocar, emprestar ou ceder o veículo; usá-lo em transporte remunerado de passageiros (aplicativos) ou com carga acima da capacidade; participar de competições, rachas ou aulas de direção; rebocar outros veículos; dirigir sob efeito de álcool ou drogas; trafegar fora de estrada ou em vias sem condições; transportar produtos perigosos ou ilícitos; alterar o veículo, instalar acessórios ou mexer no rastreador.
+
+7.4. Sair da região do item 5 exige aviso prévio pelo Sistema F2 Conect; sair do país é proibido.
+
+7.5. O veículo deve ficar trancado e em local seguro, sem documentos ou chaves dentro.
+
+7.6. Ao acender luz de alerta no painel ou perceber defeito, o Condutor deve parar com segurança e avisar a LOCADORA em até 24 horas. Seguir rodando com o defeito torna a LOCATÁRIA responsável pelo agravamento do dano.
+
+### CLÁUSULA 8 – MANUTENÇÃO, DESGASTE E MAU USO
+
+8.1. A LOCADORA paga a manutenção preventiva do plano do fabricante e a corretiva por desgaste natural (revisões, pneus gastos pelo uso normal, pastilhas e discos de freio, embreagem por desgaste normal, bateria e amortecedores), além de IPVA, licenciamento e seguro.
+
+8.2. A LOCATÁRIA paga as despesas do item 14 e o reparo de pneu furado. Também deve calibrar os pneus e conferir óleo e água ao menos a cada 15 dias.
+
+8.3. É desgaste natural o compatível com a quilometragem rodada e com o uso regular em cidade e estrada. É mau uso, pago pela LOCATÁRIA:
+
+- danos por buraco, meio-fio, impacto ou colisão sem cobertura do seguro;
+- pneus com cortes, bolhas ou desgaste irregular por falta de calibragem;
+- embreagem danificada antes de 40.000 km rodados na locação, salvo defeito de fabricação;
+- motor danificado por rodar sem óleo ou água, ou superaquecido depois do alerta do painel;
+- combustível errado ou adulterado;
+- bancos rasgados, queimados ou manchados, sujeira excessiva ou odor;
+- perda de chave, documento ou acessório;
+- avarias de lataria, vidros, faróis e retrovisores.
+
+8.4. Quando o dano indicar mau uso, a LOCADORA envia fotos e o orçamento ou laudo da oficina. A LOCATÁRIA tem 5 dias úteis para contestar com provas. Sem contestação, ou depois de analisada, o valor entra na fatura seguinte.
+
+8.5. A LOCATÁRIA deve apresentar o veículo às revisões nas datas ou quilometragens avisadas pela LOCADORA. Atraso acima de 1.000 km ou 15 dias por culpa da LOCATÁRIA a torna responsável pelos danos e pela perda de garantia que resultarem.
+
+8.6. Serviços só em oficinas autorizadas pela LOCADORA. Despesa feita sem autorização prévia não é reembolsada, salvo emergência até o limite do item 17, com nota fiscal.
+
+### CLÁUSULA 9 – VISTORIAS E REGISTROS
+
+9.1. Na entrega e na devolução é feita vistoria com fotos (Anexo I). A LOCATÁRIA disponibiliza o veículo para vistorias periódicas, com aviso de 48 horas.
+
+9.2. Os registros do Sistema F2 Conect, com data, hora, fotos e localização, valem como prova das ocorrências deste contrato.
+
+9.3. A LOCATÁRIA pode contestar uma vistoria em até 5 dias úteis; depois disso ela é considerada aceita.
+
+### CLÁUSULA 10 – SEGURO, SINISTRO E FRANQUIA
+
+10.1. O veículo é segurado pela LOCADORA, com as coberturas do item 15 e do Anexo III.
+
+10.2. Em acidente, roubo, furto, incêndio ou dano, a LOCATÁRIA deve: avisar a LOCADORA imediatamente, em até 24 horas; registrar boletim de ocorrência em até 48 horas; fotografar o local e anotar os dados dos envolvidos; não assumir culpa nem fazer acordo sem autorização da LOCADORA.
+
+10.3. Em cada sinistro, a LOCATÁRIA paga a franquia de sinistro do item 15: o valor para danos ao veículo ou, em roubo, furto ou perda total, o valor próprio desses casos. Se o conserto custar menos que a franquia, paga só o conserto. Não paga quando houver culpa exclusiva de terceiro com ressarcimento comprovado.
+
+10.4. A LOCATÁRIA paga o prejuízo inteiro quando o seguro não cobrir ou negar cobertura por: Condutor não cadastrado ou sem CNH válida; álcool ou drogas; uso proibido (cláusula 7.3); aviso ou boletim fora do prazo; chave deixada no veículo; ou outra exclusão da apólice causada por ela.
+
+10.5. Durante o reparo de sinistro causado pela LOCATÁRIA, o aluguel continua devido.
+
+10.6. Em perda total ou roubo não recuperado, a locação daquele veículo termina na data do aviso. A LOCADORA pode oferecer outro veículo nas mesmas condições.
+
+### CLÁUSULA 11 – DANOS A TERCEIROS E DIREITO DE REGRESSO
+
+11.1. Durante a posse do veículo, a LOCATÁRIA responde pelos danos causados a terceiros e ao veículo no que exceder a cobertura do seguro.
+
+11.2. Se a LOCADORA for cobrada, processada ou condenada por dano causado no uso do veículo locado, a LOCATÁRIA a reembolsa integralmente, incluindo custas e honorários, no que exceder o seguro, em até 10 dias da comunicação. A LOCATÁRIA aceita ser chamada ao processo.
+
+11.3. Não há vínculo de emprego entre a LOCADORA e os Condutores. A LOCADORA não responde por objetos deixados no veículo.
+
+### CLÁUSULA 12 – MULTAS E INFRAÇÕES DE TRÂNSITO
+
+12.1. Multas, pontos e infrações durante a locação são de responsabilidade da LOCATÁRIA e do Condutor.
+
+12.2. A LOCADORA informa a notificação pelo Sistema F2 Conect, e a LOCATÁRIA indica o Condutor em até 5 dias úteis, com cópia da CNH e assinatura do Condutor, para que a indicação seja feita dentro do prazo legal de 30 dias.
+
+12.3. Sem indicação no prazo, a LOCADORA pode indicar o Condutor registrado no Sistema F2 Conect naquele horário. Se ninguém puder ser indicado, a multa adicional por não indicação aplicada à LOCADORA é paga pela LOCATÁRIA.
+
+12.4. Multas e a taxa do item 17 são cobradas na fatura seguinte. Em apreensão ou remoção, guincho, pátio e taxas são da LOCATÁRIA, e o aluguel continua devido.
+
+12.5. Nos planos com prazo de 180 dias ou mais, a LOCATÁRIA concorda em ser registrada no Detran como possuidora do veículo, quando possível, para receber as notificações diretamente.
+
+### CLÁUSULA 13 – RASTREAMENTO, SISTEMA E DADOS
+
+13.1. O veículo tem rastreador. A LOCATÁRIA autoriza a coleta de localização, quilometragem e eventos de condução para segurança, apuração de km, recuperação em roubo e execução deste contrato, e se compromete a informar seus Condutores, conforme a LGPD.
+
+13.2. A LOCATÁRIA recebe acesso ao Sistema F2 Conect para registrar uso, km, abastecimentos, vistorias e chamados e acompanhar faturas e franquia. Ela é responsável pelos acessos que criar para seus Condutores.
+
+13.3. O bloqueio remoto só é usado em roubo, furto, não devolução ou inadimplência após notificação, sempre com o veículo parado.
+
+### CLÁUSULA 14 – DEVOLUÇÃO E NÃO DEVOLUÇÃO
+
+14.1. No fim do contrato, a LOCATÁRIA devolve o veículo no local do item 19, em horário comercial, com todos os itens da entrega, limpo e com o mesmo nível de combustível.
+
+14.2. Na devolução é feita vistoria com fotos, comparada à de entrega. Diferenças além do desgaste natural são cobradas pela tabela do Anexo IV ou por orçamento de oficina.
+
+14.3. Combustível faltante e limpeza especial são cobrados pelas taxas do item 17.
+
+14.4. Cada dia de atraso na devolução é cobrado pela taxa do item 17.
+
+14.5. Se o veículo não for devolvido em 48 horas após o término ou após notificação de rescisão, a posse da LOCATÁRIA passa a ser indevida. A LOCADORA pode pedir a reintegração de posse com liminar, bloquear o veículo nos termos da cláusula 13.3 e registrar ocorrência, e a LOCATÁRIA paga, enquanto não devolver, aluguel diário em dobro, sem prejuízo das medidas cíveis e criminais cabíveis.
+
+### CLÁUSULA 15 – RESCISÃO
+
+15.1. No plano mensal, qualquer parte encerra com aviso escrito de 30 dias, sem multa.
+
+15.2. Nos planos com prazo, a LOCATÁRIA pode encerrar antes do término com aviso escrito de 30 dias, pagando a multa rescisória do item 16, proporcional ao tempo que falta.
+
+15.3. A LOCADORA pode encerrar imediatamente, com a multa do item 16 devida pela LOCATÁRIA, em caso de: atraso acima de 30 dias; uso proibido (cláusula 7.3); Condutor não cadastrado; sublocação; adulteração de odômetro ou rastreador; ou falência ou recuperação judicial da LOCATÁRIA.
+
+15.4. Se a LOCADORA encerrar um plano com prazo antes do término, sem os motivos da cláusula 15.3, ela oferece veículo equivalente ou libera a LOCATÁRIA dos aluguéis restantes, sem multa para nenhuma parte.
+
+15.5. O encerramento não dispensa o pagamento dos valores em aberto nem a devolução nas condições da cláusula 14.
+
+### CLÁUSULA 16 – VEÍCULO PARADO E SUBSTITUTO
+
+16.1. Se o veículo ficar parado por responsabilidade da LOCADORA além do prazo do item 18, ela fornece veículo substituto quando disponível; não fornecendo, os dias parados são descontados do aluguel.
+
+16.2. Parado por mau uso, sinistro causado pela LOCATÁRIA ou apreensão, não há substituto nem desconto.
+
+### CLÁUSULA 17 – COMUNICAÇÕES
+
+17.1. Valem como aviso entre as partes as mensagens pelo Sistema F2 Conect, pelo e-mail e pelo WhatsApp do item 3. A LOCATÁRIA mantém esses contatos atualizados.
+
+### CLÁUSULA 18 – DISPOSIÇÕES GERAIS
+
+18.1. A tolerância de uma parte com o descumprimento da outra não altera o contrato nem significa renúncia a direitos.
+
+18.2. A LOCATÁRIA não pode ceder este contrato sem autorização escrita da LOCADORA.
+
+18.3. Se uma cláusula for considerada inválida, as demais continuam valendo.
+
+### CLÁUSULA 19 – FORO
+
+19.1. Fica eleito o foro da Comarca de Belo Horizonte/MG.
+
+### CLÁUSULA 20 – ASSINATURA E TÍTULO EXECUTIVO
+
+20.1. As partes aceitam a assinatura eletrônica deste contrato e de seus anexos, que vale como título executivo extrajudicial. Assinado em papel, é assinado também por duas testemunhas.
+
+Belo Horizonte, {{dataAssinatura}}.
+
+________________________________________
+
+**F2 CARLOC LTDA** – LOCADORA – Felipe Linhares Couto
+
+________________________________________
+
+**{{locataria}}** – LOCATÁRIA – {{representante}}
+
+Testemunhas:
+
+1) ______________________________ CPF ________________
+
+2) ______________________________ CPF ________________
+
+### ANEXOS
+
+- **Anexo I – Laudo de Vistoria de Entrega:** gerado pelo Sistema F2 Conect, com fotos, km, combustível e itens.
+- **Anexo II – Pacotes de km adicional:** {{pacotes}}
+- **Anexo III – Resumo do seguro:** seguradora, apólice, coberturas, franquia e telefone da assistência 24 horas.
+- **Anexo IV – Tabela de avarias:** valores de referência para riscos, amassados, para-choque, retrovisor, farol, vidros, pneu, chave reserva e documento.`;
+
+const ctModelo = () => { const m=G('config','contrato_modelo'); return (m && m.texto) ? m.texto : CT_MODELO_PADRAO; };
+/* --- números por extenso, datas e valores --- */
+function extensoInt(n){ const U=['zero','um','dois','três','quatro','cinco','seis','sete','oito','nove','dez','onze','doze','treze','quatorze','quinze','dezesseis','dezessete','dezoito','dezenove'];
+  const T=['','','vinte','trinta','quarenta','cinquenta','sessenta','setenta','oitenta','noventa']; const H=['','cento','duzentos','trezentos','quatrocentos','quinhentos','seiscentos','setecentos','oitocentos','novecentos'];
+  const ate999=x=>{ if(x===100) return 'cem'; const c=Math.floor(x/100), r=x%100, p=[]; if(c) p.push(H[c]); if(r){ if(r<20) p.push(U[r]); else { const t=T[Math.floor(r/10)], u=r%10; p.push(u?t+' e '+U[u]:t); } } return p.join(' e '); };
+  if(!n) return 'zero'; const mi=Math.floor(n/1e6), mil=Math.floor((n%1e6)/1000), r=n%1000; const p=[];
+  if(mi) p.push(mi===1?'um milhão':ate999(mi)+' milhões'); if(mil) p.push(mil===1?'mil':ate999(mil)+' mil');
+  if(r){ p.push((p.length && (r<100 || r%100===0) ? 'e ' : '')+ate999(r)); } return p.join(' '); }
+function extensoReais(v){ v=Math.round((+v||0)*100); const i=Math.floor(v/100), c=v%100; const p=[];
+  if(i) p.push(extensoInt(i)+(i===1?' real':(i%1e6===0?' de reais':' reais'))); if(c) p.push(extensoInt(c)+(c===1?' centavo':' centavos')); return p.join(' e ')||'zero reais'; }
+const dataExtenso = iso => { if(!iso) return ''; const [y,m,d]=iso.slice(0,10).split('-').map(Number); return `${d} de ${['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'][m-1]} de ${y}`; };
+/* --- valores do contrato para o modelo --- */
+function ctValores(c){
+  const cli=G('clientes',c.clienteId)||{}, v=G('veiculos',c.veiculoId)||{}; const mod=c.modalidade||modalidadeDe(c);
+  const m=x=>(x===''||x==null||isNaN(+x))?'':money(+x); const pc=x=>(x===''||x==null)?'':nf(+x,String(x).includes('.')?1:0)+'%';
+  const plano=MODALIDADES.map(([k,l])=>(mod===k?'(X) ':'( ) ')+l).join(' · ')+(!mod&&c.prazoMeses?` · (X) Outro: ${c.prazoMeses} meses`:'');
+  const cumul=c.periodicidade==='cumulativa';
+  const despPadrao='Combustível, troca de óleo e filtro de óleo, lavagem, pedágios e estacionamentos'+(['anual','24m'].includes(mod)?'; também alinhamento e balanceamento':'');
+  const pac=(c.pacotesOferta||[]).map(p=>`${nf(p.km)} km = ${money(p.preco)}`).join(' · ');
+  const val={numero:c.numero||'', locataria:cli.nome||'', cnpj:cli.documento||'', endereco:cli.endereco||'', representante:cli.representante||cli.contato||'', cargo:cli.cargoRep||'', cpfRepresentante:cli.cpfRep||'',
+    email:cli.email||'', whatsapp:cli.telefone||'', responsavelFrota:cli.contato||'',
+    veiculo:[v.marca,v.modelo,v.versao].filter(Boolean).join(' '), ano:[v.anoFab,v.anoModelo].filter(Boolean).join('/'), placa:(v.placa||'').toUpperCase(), cor:v.cor||'', renavam:v.renavam||'', chassi:v.chassi||'',
+    combustivel:({flex:'álcool/gasolina (flex)',gasolina:'gasolina',etanol:'etanol',diesel:'diesel',hibrido:'híbrido',eletrico:'elétrico'})[v.combustivel]||'', valorReferencia:m(c.valorReferencia),
+    finalidade:c.finalidade||'', regiao:c.regiao||'', plano, inicio:dbr(c.inicio), termino:mod==='mensal'||!c.fim?'prazo indeterminado':dbr(c.fim),
+    aluguel:m(c.aluguel), aluguelExtenso:c.aluguel?extensoReais(c.aluguel):'',
+    franquiaKm:c.kmContratado?nf(c.kmContratado)+' km':'sem limite de km', franquiaTipo:!c.kmContratado?'':c.periodicidade==='total'?'no total do contrato':cumul?'por mês, cumulativa: o km não usado passa para os meses seguintes (cláusula 4.3)':'por mês, não cumulativa',
+    kmExcedente:m(c.valorKmExcedente), kmExcedente2:m(c.valorKmExcedente2||c.valorKmExcedente), diaVencimento:c.diaVenc?String(c.diaVenc):'', mesVencimento:c.vencRef==='uso'?'de uso':'seguinte ao de uso',
+    indice:c.reajIndice||'', caucao:m(c.caucao), despesas:c.despesasLocataria||despPadrao, seguradora:c.seguradora||'', franquiaSinistro:m(c.franquiaSinistro), franquiaRoubo:m(c.franquiaRoubo), coberturaTerceiros:m(c.coberturaTerceiros),
+    multaRescisoria:mod==='mensal'?'não se aplica (plano mensal)':(c.multaRescisoria||''), multaAtraso:pc(c.multaAtraso??2), taxaMulta:m(c.taxaMulta), combustivelPct:pc(c.combustivelPct), limpeza:m(c.limpeza), atrasoDevolucao:c.atrasoDevolucao||'',
+    limiteEmergencia:m(c.limiteEmergencia??cfg().limiteEmergencia), carencia:String(c.carencia??''), localDevolucao:c.localDevolucao||'', condicoes:c.condicoes||'Não há.', pacotes:pac||'Não há pacotes oferecidos neste contrato.',
+    dataAssinatura:dataExtenso(c.dataAssinatura||c.inicio)};
+  const flags={cumulativa:cumul, mensal:mod==='mensal', comPrazo:mod!=='mensal'};
+  return {val,flags};
+}
+function modalidadeDe(c){ if(c.modalidade) return c.modalidade; const p=+c.prazoMeses||0; return !c.fim&&!p?'mensal':p===6?'semestral':p===12?'anual':p===24?'24m':''; }
+/* Preenche o modelo. Campos vazios viram ⟦Nome do campo⟧, destacados no documento. */
+function ctPreencher(texto, val, flags){
+  let t=texto.replace(/\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g,(_,k,b)=>flags[k]?b:'').replace(/\{\{\^(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g,(_,k,b)=>flags[k]?'':b);
+  const faltam=new Set(), opc=new Set(); const nome=k=>(CT_CAMPOS.find(x=>x[0]===k)||[k,k])[1];
+  t=t.replace(/\{\{(\w+)\}\}/g,(_,k)=>{ const x=val[k]; if(x===undefined) { faltam.add(nome(k)); return '⟦'+k+'⟧'; } if(x===''||x==null){ (CT_OPCIONAIS.includes(k)?opc:faltam).add(nome(k)); return '⟦'+nome(k)+'⟧'; } return String(x); });
+  return {texto:t, faltam:[...faltam], opcionais:[...opc]};
+}
+/* Converte a marcação em blocos: {t:'h1'|'h2'|'h3'|'p'|'li'|'table', ...} */
+function ctBlocos(texto){
+  const out=[]; let tab=null;
+  for(const raw of texto.split('\n')){ const l=raw.replace(/\s+$/,'');
+    if(/^\|.*\|$/.test(l.trim())){ if(/^\|[\s|:-]+\|$/.test(l.trim())) continue; const cells=l.trim().slice(1,-1).split('|').map(s=>s.trim()); if(!tab){ tab={t:'table',rows:[]}; out.push(tab); } tab.rows.push(cells); continue; }
+    tab=null; if(!l.trim()) continue;
+    let m; if((m=l.match(/^(#{1,3})\s+(.*)/))) out.push({t:'h'+m[1].length,x:m[2]}); else if((m=l.match(/^\s*[-•]\s+(.*)/))) out.push({t:'li',x:m[1]}); else out.push({t:'p',x:l.trim()}); }
+  return out;
+}
+/* Trechos de uma linha: negrito (**…**) e campo vazio (⟦…⟧) */
+function ctRuns(s){ const r=[]; let b=false; for(const part of s.split('**')){ if(part){ for(const q of part.split(/(⟦[^⟧]*⟧)/)){ if(!q) continue; const falta=q.startsWith('⟦'); r.push({x:falta?'['+q.slice(1,-1)+']':q,b,falta}); } } b=!b; } return r; }
+function ctHTML(blocos){
+  const run=s=>ctRuns(s).map(r=>{ let h=esc(r.x); if(r.b) h='<b>'+h+'</b>'; if(r.falta) h='<mark>'+h+'</mark>'; return h; }).join('');
+  let h=''; let lista=false;
+  for(const b of blocos){ if(b.t!=='li'&&lista){ h+='</ul>'; lista=false; }
+    if(b.t==='h1') h+=`<h1>${run(b.x)}</h1>`; else if(b.t==='h2') h+=`<h2>${run(b.x)}</h2>`; else if(b.t==='h3') h+=`<h3>${run(b.x)}</h3>`;
+    else if(b.t==='li'){ if(!lista){ h+='<ul>'; lista=true; } h+=`<li>${run(b.x)}</li>`; }
+    else if(b.t==='table') h+='<table>'+b.rows.map((r,i)=>'<tr>'+r.map(c=>i===0?`<th>${run(c)}</th>`:`<td>${run(c)}</td>`).join('')+'</tr>').join('')+'</table>';
+    else h+=`<p>${run(b.x)}</p>`; }
+  if(lista) h+='</ul>'; return h;
+}
+const CT_CSS=`body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;line-height:1.45;color:#111;margin:0}
+.doc{max-width:17cm;margin:0 auto;padding:1.6cm 0}
+h1{font-size:14pt;text-align:center;margin:0 0 14pt}h2{font-size:12pt;margin:16pt 0 6pt}h3{font-size:10.5pt;margin:12pt 0 4pt}
+p{margin:0 0 6pt;text-align:justify}ul{margin:0 0 6pt 18pt;padding:0}li{margin:0 0 3pt;text-align:justify}
+table{border-collapse:collapse;width:100%;margin:6pt 0 10pt;font-size:9pt}th,td{border:1px solid #999;padding:4pt 5pt;vertical-align:top;text-align:left}th{background:#e8e8e8}
+td:first-child{width:1.1cm;text-align:center}td:nth-child(2){width:4.2cm}
+mark{background:#fff3a0}
+@page{size:A4;margin:2cm 2.2cm}@media print{.doc{padding:0;max-width:none}}`;
+/* --- Word (.docx) gerado no próprio navegador --- */
+const xe = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function ctDocxXML(blocos){
+  const runs=(s,base)=>ctRuns(s).map(r=>`<w:r><w:rPr>${r.b||base?'<w:b/>':''}${r.falta?'<w:highlight w:val="yellow"/>':''}</w:rPr><w:t xml:space="preserve">${xe(r.x)}</w:t></w:r>`).join('');
+  const par=(s,st,extra)=>`<w:p><w:pPr>${st?`<w:pStyle w:val="${st}"/>`:''}${extra||''}</w:pPr>${runs(s)}</w:p>`;
+  let body='';
+  for(const b of blocos){
+    if(b.t==='h1') body+=par(b.x,'Titulo'); else if(b.t==='h2') body+=par(b.x,'Secao'); else if(b.t==='h3') body+=par(b.x,'Clausula');
+    else if(b.t==='li') body+=par(b.x,'Lista','<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>');
+    else if(b.t==='table'){ const n=Math.max(...b.rows.map(r=>r.length)); const W=n===3?[650,2350,6070]:Array(n).fill(Math.floor(9070/n));
+      body+=`<w:tbl><w:tblPr><w:tblW w:w="9070" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders>${['top','left','bottom','right','insideH','insideV'].map(x=>`<w:${x} w:val="single" w:sz="4" w:space="0" w:color="999999"/>`).join('')}</w:tblBorders><w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="80" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${W.map(w=>`<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`+
+        b.rows.map((r,i)=>`<w:tr>${i===0?'<w:trPr><w:tblHeader/></w:trPr>':''}${W.map((w,j)=>`<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${i===0?'<w:shd w:val="clear" w:color="auto" w:fill="E8E8E8"/>':''}</w:tcPr><w:p><w:pPr><w:pStyle w:val="Celula"/></w:pPr>${runs(r[j]||'',i===0)}</w:p></w:tc>`).join('')}</w:tr>`).join('')+`</w:tbl>${par('','Normal')}`; }
+    else body+=par(b.x,'Normal'); }
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${body}<w:sectPr><w:footerReference w:type="default" r:id="rIdFooter"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1247" w:right="1417" w:bottom="1134" w:left="1417" w:header="709" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+}
+const CT_STYLES=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Arial" w:cs="Arial"/><w:sz w:val="21"/><w:szCs w:val="21"/><w:lang w:val="pt-BR"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
+<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr><w:jc w:val="both"/></w:pPr></w:style>
+<w:style w:type="paragraph" w:styleId="Titulo"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:pPr><w:jc w:val="center"/><w:spacing w:after="280"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Secao"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="320" w:after="120"/><w:jc w:val="left"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="24"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Clausula"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="220" w:after="80"/><w:jc w:val="left"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Lista"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="60"/><w:ind w:left="567" w:hanging="283"/></w:pPr></w:style>
+<w:style w:type="paragraph" w:styleId="Celula"><w:name w:val="Table Cell"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="left"/></w:pPr><w:rPr><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Rodape"><w:name w:val="footer"/><w:basedOn w:val="Normal"/><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:sz w:val="16"/><w:color w:val="666666"/></w:rPr></w:style></w:styles>`;
+const CT_NUMBERING=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="567" w:hanging="283"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>`;
+function ctFooterXML(numero){ const fld=(c)=>`<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> ${c} </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:pStyle w:val="Rodape"/></w:pPr><w:r><w:t xml:space="preserve">F2 Carloc · Contrato nº ${xe(numero||'')} · página </w:t></w:r>${fld('PAGE')}<w:r><w:t xml:space="preserve"> de </w:t></w:r>${fld('NUMPAGES')}<w:r><w:t xml:space="preserve"> · rubrica: ______</w:t></w:r></w:p></w:ftr>`; }
+/* ZIP sem compressão (formato "store"), suficiente para o Word abrir o .docx */
+const CRC_T=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(b){ let c=0xFFFFFFFF; for(let i=0;i<b.length;i++) c=CRC_T[(c^b[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function zipStore(arquivos){
+  const enc=new TextEncoder(); const partes=[], central=[]; let off=0; const d=new Date();
+  const tm=((d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1))&0xFFFF, dt=(((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate())&0xFFFF;
+  for(const [nome,conteudo] of arquivos){ const nb=enc.encode(nome), data=enc.encode(conteudo), crc=crc32(data);
+    const h=new DataView(new ArrayBuffer(30)); h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(6,0x0800,true); h.setUint16(8,0,true); h.setUint16(10,tm,true); h.setUint16(12,dt,true); h.setUint32(14,crc,true); h.setUint32(18,data.length,true); h.setUint32(22,data.length,true); h.setUint16(26,nb.length,true); h.setUint16(28,0,true);
+    partes.push(new Uint8Array(h.buffer),nb,data);
+    const c=new DataView(new ArrayBuffer(46)); c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true); c.setUint16(8,0x0800,true); c.setUint16(10,0,true); c.setUint16(12,tm,true); c.setUint16(14,dt,true); c.setUint32(16,crc,true); c.setUint32(20,data.length,true); c.setUint32(24,data.length,true); c.setUint16(28,nb.length,true); c.setUint16(30,0,true); c.setUint16(32,0,true); c.setUint16(34,0,true); c.setUint16(36,0,true); c.setUint32(38,0,true); c.setUint32(42,off,true);
+    central.push(new Uint8Array(c.buffer),nb); off+=30+nb.length+data.length; }
+  const tamC=central.reduce((s,x)=>s+x.length,0); const e=new DataView(new ArrayBuffer(22)); e.setUint32(0,0x06054b50,true); e.setUint16(8,arquivos.length,true); e.setUint16(10,arquivos.length,true); e.setUint32(12,tamC,true); e.setUint32(16,off,true);
+  return new Blob([...partes,...central,new Uint8Array(e.buffer)],{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+}
+function ctDocx(blocos, numero){
+  const W='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  return zipStore([
+    ['[Content_Types].xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>'],
+    ['_rels/.rels',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${W}/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`],
+    ['docProps/core.xml',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Contrato de locação de veículo ${xe(numero||'')}</dc:title><dc:creator>F2 Carloc Ltda</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString().slice(0,19)}Z</dcterms:created></cp:coreProperties>`],
+    ['word/_rels/document.xml.rels',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="${W}/styles" Target="styles.xml"/><Relationship Id="rIdNum" Type="${W}/numbering" Target="numbering.xml"/><Relationship Id="rIdFooter" Type="${W}/footer" Target="footer1.xml"/></Relationships>`],
+    ['word/document.xml',ctDocxXML(blocos)],['word/styles.xml',CT_STYLES],['word/numbering.xml',CT_NUMBERING],['word/footer1.xml',ctFooterXML(numero)]]);
+}
+/* --- tela do documento: conferir, baixar Word, imprimir/PDF --- */
+function ctNomeArquivo(c,ext){ const v=G('veiculos',c.veiculoId)||{}; const cli=G('clientes',c.clienteId)||{}; return `Contrato ${c.numero||''} ${(v.placa||'').toUpperCase()} ${(cli.nome||'').slice(0,40)}`.replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,' ').trim()+'.'+ext; }
+function ctGerar(id){ const c=G('contratos',id); if(!c) throw 'Contrato não encontrado.'; const {val,flags}=ctValores(c); const r=ctPreencher(ctModelo(),val,flags); return {c,...r,blocos:ctBlocos(r.texto)}; }
+function abrirDocContrato(id){
+  const g=ctGerar(id); const dlg=$('#dlg');
+  dlg.innerHTML=`<div class="dbody"><div class="dh"><h2>Contrato ${esc(g.c.numero||'')} · ${esc(PL(g.c.veiculoId))} · ${esc(nomeCliente(g.c.clienteId))}</h2><button type="button" class="btn ghost" data-close>Fechar</button></div>
+    <div class="dc">${g.faltam.length?`<div class="note" style="margin-bottom:10px"><b>Faltam ${g.faltam.length} dado(s)</b>, destacados em amarelo: ${g.faltam.map(esc).join(', ')}. Complete em "Editar dados" (os dados do cliente e do carro ficam nos cadastros deles) ou baixe assim e complete no Word.</div>`:`<div class="note i" style="margin-bottom:10px">Todos os campos obrigatórios estão preenchidos.${g.opcionais.length?' Em amarelo, campos opcionais vazios: '+g.opcionais.map(esc).join(', ')+'.':''}</div>`}
+    <div class="ctprev">${ctHTML(g.blocos)}</div></div>
+    <div class="df" style="flex-wrap:wrap"><button type="button" class="btn" data-ctedit style="margin-right:auto">Editar dados</button>${g.c.pdf?`<button type="button" class="btn" data-file="${esc(g.c.pdf)}">Ver assinado</button>`:''}<button type="button" class="btn" data-ctprint>Imprimir / salvar PDF</button><button type="button" class="btn pri" data-ctdocx>Baixar Word (.docx)</button></div></div>`;
+  dlg.querySelector('[data-close]').onclick=()=>dlg.close();
+  dlg.querySelector('[data-ctedit]').onclick=()=>{ dlg.close(); openForm('contratos',id); };
+  const marca=async tipo=>{ try{ await salvar('contratos',id,{documentoGeradoEm:new Date().toISOString(),documentoGeradoPor:S.uid},'gerou documento do contrato ('+tipo+')'); }catch(e){} };
+  dlg.querySelector('[data-ctdocx]').onclick=()=>{ baixarArquivo(ctNomeArquivo(g.c,'docx'), ctDocx(g.blocos,g.c.numero)); marca('Word'); toast('Contrato baixado. Envie ao cliente para assinar e depois anexe o assinado no contrato.'); };
+  dlg.querySelector('[data-ctprint]').onclick=()=>{ const w=window.open('','_blank'); if(!w){ toast('O navegador bloqueou a janela. Libere pop-ups para este site.'); return; }
+    w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(ctNomeArquivo(g.c,'pdf').replace(/\.pdf$/,''))}</title><style>${CT_CSS}</style></head><body><div class="doc">${ctHTML(g.blocos)}</div><script>setTimeout(function(){window.print()},300)<\/script></body></html>`); w.document.close(); marca('PDF'); };
+  if(dlg.open) dlg.close(); dlgLargo(dlg); dlg.showModal();
+}
+/* --- modelo do contrato (texto) editável --- */
+function openModeloContrato(){
+  const dlg=$('#dlg'); const atual=ctModelo(); const m=G('config','contrato_modelo');
+  dlg.innerHTML=`<form id="frm" class="dbody"><div class="dh"><h2>Modelo do contrato</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc">
+    <p class="muted" style="margin-top:0">Este é o texto usado em todos os contratos novos. Os campos entre chaves duplas, como <code>{{aluguel}}</code>, são preenchidos com os dados de cada contrato. ${m&&m.atualizadoEm?'Última alteração: '+dtbr(locISO(m.atualizadoEm))+'.':'Em uso: modelo padrão (minuta v3).'}</p>
+    <details style="margin-bottom:10px"><summary class="muted">Campos disponíveis e marcação</summary><p class="muted" style="font-size:13px">${CT_CAMPOS.map(([k,l])=>`<code>{{${k}}}</code> ${esc(l)}`).join(' · ')}</p><p class="muted" style="font-size:13px"><code># </code>título · <code>## </code>seção · <code>### </code>cláusula · <code>- </code>item de lista · linhas com <code>| a | b |</code> viram tabela · <code>**texto**</code> negrito · <code>{{#cumulativa}}…{{/cumulativa}}</code> só aparece com franquia cumulativa e <code>{{^cumulativa}}…{{/cumulativa}}</code> só sem ela.</p></details>
+    <textarea id="ct_txt" style="width:100%;min-height:52vh;font-family:var(--f-mono);font-size:12.5px;line-height:1.5" spellcheck="true">${esc(atual)}</textarea><p class="hint" id="ferr" hidden style="color:var(--danger)"></p></div>
+    <div class="df"><button type="button" class="btn danger" id="ct_padrao" style="margin-right:auto">Voltar ao modelo padrão</button><button type="button" class="btn" data-close>Cancelar</button><button class="btn pri" type="submit" id="fsub">Salvar modelo</button></div></form>`;
+  const f=$('#frm'); f.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dlg.close());
+  f.querySelector('#ct_padrao').onclick=async()=>{ const ok=await perguntar('Voltar ao modelo padrão','O texto atual será trocado pelo modelo padrão (minuta v3). Contratos já gerados não mudam.','Voltar ao padrão'); if(!ok) return; try{ await S.db.doc('config/contrato_modelo').set(limpa({texto:'',atualizadoEm:new Date().toISOString(),atualizadoPor:S.uid})); audit('voltou o modelo do contrato ao padrão','config','contrato_modelo',''); dlg.close(); toast('Modelo padrão restaurado.'); }catch(e){ toast(errMsg(e)); } };
+  f.onsubmit=async e=>{ e.preventDefault(); const t=f.querySelector('#ct_txt').value; const err=$('#ferr');
+    const des=[...t.matchAll(/\{\{(\w+)\}\}/g)].map(x=>x[1]).filter(k=>!CT_CAMPOS.some(c=>c[0]===k)); if(des.length){ err.textContent='Campo(s) que o sistema não conhece: '+[...new Set(des)].join(', ')+'. Confira a lista de campos disponíveis.'; err.hidden=false; return; }
+    try{ await S.db.doc('config/contrato_modelo').set(limpa({texto:t===CT_MODELO_PADRAO?'':t,atualizadoEm:new Date().toISOString(),atualizadoPor:S.uid})); audit('alterou o modelo do contrato','config','contrato_modelo',''); dlg.close(); toast('Modelo do contrato salvo.'); }catch(ex){ err.textContent=errMsg(ex); err.hidden=false; } };
+  if(dlg.open) dlg.close(); dlgLargo(dlg); dlg.showModal();
+}
+/* --- tela Contratos --- */
+function vContratos(){
+  const cs=L('contratos').slice().sort((a,b)=>a.inicio<b.inicio?1:-1); const at=cs.filter(c=>contratoAtivo(c)), out=cs.filter(c=>!contratoAtivo(c));
+  const P=cfg(); const m=G('config','contrato_modelo'); const semPdf=at.filter(c=>!c.pdf).length;
+  const cols=[{h:'Nº',f:c=>`<span class="mono">${esc(c.numero||'—')}</span>`},{h:'Veículo',f:c=>vCell(c.veiculoId)},{h:'Cliente',f:c=>esc(nomeCliente(c.clienteId))},{h:'Plano',f:c=>esc(({mensal:'Mensal',semestral:'Semestral',anual:'Anual','24m':'24 meses'})[modalidadeDe(c)]||(c.prazoMeses?c.prazoMeses+' meses':'—'))},
+    {h:'Vigência',f:c=>`${dbr(c.inicio)} – ${c.fim?dbr(c.fim):'indeterminado'}`},{h:'Aluguel',n:1,f:c=>money(c.aluguel)},{h:'Franquia',f:c=>c.kmContratado?`${nf(c.kmContratado)} km ${c.periodicidade==='total'?'no total':c.periodicidade==='cumulativa'?'/mês cumulativa':'/mês'}`:'Sem limite'},
+    {h:'Assinado',f:c=>c.pdf?arq(c.pdf):'<span class="pill p-warn">Falta anexar</span>'},{h:'',f:c=>`<button class="btn sm pri" data-act="docContrato" data-id="${c.id}" data-stop>Documento</button>`}];
+  return head('Contratos','Cadastro dos contratos, documento para assinatura e modelos de plano.',`${B('Modelo do contrato','modeloContrato')}${B('Novo contrato','new','data-k="contratos"',1)}`)+
+  `<div class="stack"><div class="kpis">${kpi('Contratos ativos',at.length,'')}${kpi('Falta anexar assinado',semPdf,semPdf?'ativos sem o PDF assinado':'tudo em dia')}${kpi('Modelo do contrato',m&&m.texto?'Personalizado':'Padrão',m&&m.atualizadoEm?'alterado em '+dbr(locISO(m.atualizadoEm)):'minuta v3')}</div>
+  <div class="note i">Para gerar o contrato: cadastre (ou abra) o contrato, clique em <b>Documento</b>, confira e baixe em Word ou PDF. Depois de assinado, anexe o PDF em "Editar" → "Contrato assinado".</div>
+  <section><h3>Ativos (${at.length})</h3>${tabela(cols,at,'Nenhum contrato ativo.',c=>`data-act="edit" data-k="contratos" data-id="${c.id}"`)}</section>
+  ${out.length?`<section><h3>Encerrados e futuros (${out.length})</h3>${tabela(cols,out,'',c=>`data-act="edit" data-k="contratos" data-id="${c.id}"`)}</section>`:''}
+  <section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Modelos de plano</h3>${B('Novo modelo','novoPlano')}</div>
+    <p class="muted" style="margin:0 0 10px">Combinam prazo e franquia. Preenchem o contrato e podem ser alterados nele; mudar um modelo não altera contratos existentes.</p>
+    ${tabela([{h:'Nome',f:p=>esc(p.nome||'—')},{h:'Prazo',n:1,f:p=>p.prazo+' meses'},{h:'Franquia',n:1,f:p=>nf(p.km)+' km/mês'},{h:'Aluguel',n:1,f:p=>money(p.aluguel)},{h:'Km excedente',n:1,f:p=>money(p.kmExc)},{h:'Pacotes',f:p=>esc(p.pacotes||'—')},{h:'',f:(p)=>`<button class="btn sm danger" data-act="delPlano" data-i="${P.planos.indexOf(p)}">Remover</button>`}],P.planos,'Nenhum modelo cadastrado.')}</section></div>`;
+}
+/* --- franquia cumulativa: saldo mês a mês --- */
+function rodadoNoPeriodo(c, ini, fim, soVerif){
+  const ls=leiturasV(c.veiculoId).filter(l=>{ const d=l.data.slice(0,10); return d>=ini && d<=fim && (!soVerif||l.status==='verificada'); });
+  if(!ls.length) return 0; return Math.max(0, Math.max(...ls.map(l=>+l.km)) - kmBase(c,ini,soVerif));
+}
+function saldoCumulativo(c, refISO){
+  const ref=(refISO||hoje()).slice(0,10); let m=c.inicio.slice(0,7); const atual=ref.slice(0,7); let sE=0, sC=0, guarda=0;
+  while(m<atual && guarda++<120){ const p=periodoFranquia(c,m+'-15'); const pac=pacotesPeriodo(c,p).reduce((s,k)=>s+(+k.km||0),0);
+    sE=sE+(+c.kmContratado)+pac-rodadoNoPeriodo(c,p.ini,p.fim,false); if(sE<0) sE=0;
+    sC=sC+(+c.kmContratado)+pac-rodadoNoPeriodo(c,p.ini,p.fim,true); if(sC<0) sC=0;
+    m=mesMais(m,1); }
+  return {acumE:sE, acumC:sC};
+}
+
+function dlgLargo(dlg){ dlg.style.width='min(1000px,calc(100vw - 24px))'; dlg.addEventListener('close',()=>{ dlg.style.width=''; },{once:true}); }
+
 /* ===================== render e eventos ===================== */
 const r0=()=>S.route; let _rt=null; function agenda(){ clearTimeout(_rt); _rt=setTimeout(render,40); }
 function render(){
@@ -1933,6 +2402,8 @@ document.addEventListener('click', async e=>{
       csv(`contas-${cl}-${m}.csv`,cs,[['Vencimento',c=>dbr(c.vencimento)],['Centro de custo',c=>centroLbl(c.centro)],['Descrição',c=>c.descricao],['Categoria',c=>c.categoria||''],['Fornecedor',c=>c.fornecedor||''],['Tipo',c=>lbl(CLASSE,c.classe)],['Valor (R$)',c=>nf(c.valor,2)],['Situação',c=>c.status],['Pago em',c=>dbr(c.pagoEm)]]); }
     else if(a==='copiarMelhorias'){ const t=textoMelhorias(); let ok=false; try{ await navigator.clipboard.writeText(t); ok=true; }catch(x){}
       if(ok) toast('Lista copiada. Cole na conversa com o Claude para implementar.'); else { const dlg=$('#dlg'); dlg.innerHTML=`<form><div class="dh"><h2>Lista de melhorias</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc"><p class="muted" style="margin-top:0">Selecione tudo e copie.</p><textarea readonly style="width:100%;min-height:320px">${esc(t)}</textarea></div></form>`; dlg.querySelector('[data-close]').onclick=()=>dlg.close(); dlg.showModal(); } }
+    else if(a==='docContrato') abrirDocContrato(id);
+    else if(a==='modeloContrato'){ if(S.me.perfil!=='admin'){ toast('Só o administrador altera o modelo do contrato.'); return; } openModeloContrato(); }
     else if(a==='csvRentab') csv(`rentabilidade-${hoje()}.csv`,linhasRentab(),[['Placa',r=>PL(r.v.id)],['Modelo',r=>r.v.modelo||''],['Situação',r=>VSTATUS[r.status]||r.status],['Receita acumulada',r=>nf(r.acc.rec,2)],['Custos acumulados',r=>nf(r.acc.custo,2)],['Resultado acumulado',r=>nf(r.acc.res,2)],['Preço de compra',r=>nf(r.compra,2)],['Retorno sobre a compra (%)',r=>r.roi!=null?nf(r.roi,1):''],['Km rodado',r=>r.kmRod],['Custo por km',r=>r.custoKm!=null?nf(r.custoKm,2):''],['Aluguel ÷ compra (%/mês)',r=>r.yieldMes!=null?nf(r.yieldMes,2):''],['Resultado médio 3 meses',r=>r.med!=null?nf(r.med,2):''],['Rende por mês (aluguel − fixas)',r=>nf(r.rendeMes,2)],['Despesas fixas por mês',r=>nf(r.fixasMes,2)],['Meses para se pagar',r=>r.payback!=null?nf(r.payback,0):'']]);
     else if(a==='centroAdm'){ S.ui.centro=CENTRO_ADM; go('variaveis'); }
     else if(a==='sairVerComo') sairVerComo();

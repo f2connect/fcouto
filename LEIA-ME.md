@@ -4,7 +4,7 @@ Pasta pronta para publicar. O sistema é um site estático (Vercel) que guarda t
 
 | Arquivo | Para que serve |
 | --- | --- |
-| `index.html` | O sistema inteiro: painel da F2 e portal do cliente (gestor e condutor) |
+| `index.html` | O sistema inteiro: painel da F2, portal do cliente (gestor e condutor) e o modelo do contrato |
 | `api/agente.js` | O assistente de chat: confere quem está logado e conversa com a IA (Google Gemini gratuito, ou Claude se preferir). A chave fica só na Vercel |
 | `config.js` e `api/config.js` | Leem a URL e a chave pública do Supabase, que a integração Supabase ↔ Vercel preenche sozinha |
 | `qrcode.js` | Gera o QR code de check-in de cada carro (biblioteca qrcode-generator, licença MIT) |
@@ -83,6 +83,15 @@ Não precisa cadastrar cartão. Cuidados do plano gratuito:
 - No plano gratuito, o Google pode usar as conversas para melhorar os produtos dele. Evite colar no chat dados sensíveis (o assistente já não envia CPF nem número de CNH).
 
 Opcional, pago: para usar o Claude no lugar do Gemini, apague `GEMINI_API_KEY` e crie `ANTHROPIC_API_KEY` com uma chave de console.anthropic.com (cobrança por uso). Para desligar o assistente, apague a variável e faça Redeploy.
+
+## Contratos e documento para assinatura (versão 10)
+
+- Novo menu **Contratos**, separado de Configurações: lista dos contratos, modelos de plano e o **modelo do contrato** (texto da minuta v3).
+- O cadastro do contrato tem todos os campos do quadro-resumo: plano (mensal, semestral, anual ou 24 meses), aluguel, vencimento, caução, reajuste, franquia de km (mensal **cumulativa**, mensal não cumulativa ou total), km excedente e valor acima de 30% da franquia, seguro e franquias de sinistro, despesas do cliente, taxas, local de devolução e condições especiais. Tudo editável. O número do contrato é gerado sozinho (F2-2026-001…).
+- O cadastro do cliente ganhou representante legal, cargo e CPF, que vão para o contrato.
+- Botão **Documento** (em Contratos, na aba Contrato de cada carro e nos contratos do cliente): mostra o contrato preenchido, avisa os dados que faltam (em amarelo) e baixa em **Word (.docx)** ou abre para **imprimir / salvar em PDF**. Envie ao cliente para assinar e depois anexe o PDF assinado em Editar → Contrato assinado.
+- **Modelo do contrato:** o administrador pode editar o texto em Contratos → Modelo do contrato. Campos entre chaves duplas, como `{{aluguel}}`, são preenchidos sozinhos. Há um botão para voltar ao modelo padrão.
+- **Franquia cumulativa no controle de km e na fatura:** o km não usado passa para os meses seguintes; o excedente só é cobrado quando o saldo acumulado fica negativo. Se houver valor para o km acima de 30% da franquia, a fatura separa as duas faixas.
 
 ## Despesas fixas e rendimento de cada carro (versão 9)
 
