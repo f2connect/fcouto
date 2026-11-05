@@ -12,6 +12,11 @@ Pasta pronta para publicar. O sistema é um site estático (Vercel) que guarda t
 | `manifest.webmanifest`, `icon.svg` | Permitem instalar o site como app no celular |
 | `vercel.json` | Cabeçalhos de segurança e cache para o Vercel |
 
+## Versão 14: quem pagou a manutenção
+
+- No formulário de manutenção, logo depois do valor, o campo "Quem pagou": F2 ou Cliente. F2 vira conta paga no custo do carro; Cliente fica só no histórico (aparece "pago pelo cliente" nas Últimas trocas). Trocar de F2 para Cliente cancela a conta ligada.
+- O formulário ficou mais curto: saíram chamado de origem, entrada/liberação da oficina e próxima por data/km (o quadro calcula sozinho).
+
 ## Versão 13: só a F2, contas numa tela e últimas trocas
 
 - Modo interno: saíram a área do cliente, a área do motorista, check-in/checkout, QR code, abastecimento e chamados. Quem abre /cliente ou /motorista vê "Área desativada". Nada foi apagado: para religar, trocar `SO_F2 = true` para `false` no index.html.

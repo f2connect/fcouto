@@ -602,18 +602,21 @@ const SCHEMA = {
     {k:'status',l:'Status',t:'sel',opts:opt([['informada','Informada'],['verificada','Verificada pela F2']]),def:'verificada'},{k:'foto',l:'Foto do odômetro',t:'file',accept:'image/*',full:1}],
     async save(v,id){ const vv=G('veiculos',v.veiculoId); const atual=vv?kmAtual(vv):0; if(+v.km<atual && !id){ v.suspeita=true; } const nid=await salvar('leituras',id,v); if(v.suspeita) toast('Leitura menor que o km atual: marcada como suspeita.'); return nid; }},
   manutencoes:{col:'manutencoes', titulo:'Manutenção', fields:[
-    {k:'veiculoId',l:'Veículo',t:'ref',ref:'veiculos',req:1},{k:'chamadoId',l:'Chamado de origem',t:'ref',ref:'chamados'},
-    {k:'categoria',l:'Categoria',t:'sel',opts:CATS.map(c=>({v:c[0],l:c[1]})),req:1,onChange:(f,val)=>{ const s=f.querySelector('#f_arcaCom'); if(s) s.value=arcaPadrao(val); }},
-    {k:'arcaCom',l:'Quem arca com o custo',t:'sel',opts:opt(ARCA),req:1,defFn:()=>arcaPadrao('preventiva'),hint:'Sugerido pela matriz de responsabilidade; ajuste se preciso.'},
-    {k:'data',l:'Data do serviço',t:'date',req:1,defFn:hoje},{k:'km',l:'Km no serviço',t:'num'},{k:'oficina',l:'Oficina / fornecedor'},{k:'valor',l:'Valor total (R$)',t:'money'},
-    {k:'pagoPor',l:'Quem pagou',t:'sel',opts:opt([['cliente','Cliente direto'],['f2','F2'],['reembolso','Cliente, com reembolso da F2']])},
+    {k:'veiculoId',l:'Veículo',t:'ref',ref:'veiculos',req:1},{k:'chamadoId',l:'Chamado de origem',t:'ref',ref:'chamados',show:()=>!SO_F2},
+    {k:'categoria',l:'O que foi feito',t:'sel',opts:CATS.map(c=>({v:c[0],l:c[1]})),req:1,onChange:(f,val)=>{ const s=f.querySelector('#f_arcaCom'); if(s){ const a=arcaPadrao(val); s.value=SO_F2?(a==='cliente'?'cliente':'f2'):a; } }},
+    {k:'data',l:'Data do serviço',t:'date',req:1,defFn:hoje},{k:'km',l:'Km no serviço',t:'num'},{k:'oficina',l:'Oficina / fornecedor'},
+    {k:'valor',l:'Valor total (R$)',t:'money'},
+    {k:'arcaCom',l:'Quem pagou',t:'sel',opts:SO_F2?opt([['f2','F2'],['cliente','Cliente']]):opt(ARCA),req:1,defFn:()=>'f2',hint:'F2: vira uma conta paga no custo do carro. Cliente: fica só no histórico do carro.'},
+    {k:'pagoPor',l:'Quem pagou',t:'sel',opts:opt([['cliente','Cliente direto'],['f2','F2'],['reembolso','Cliente, com reembolso da F2']]),show:()=>!SO_F2},
     {k:'status',l:'Situação',t:'sel',opts:opt([['agendada','Agendada'],['em_execucao','Em execução'],['concluida','Concluída'],['cancelada','Cancelada']]),def:'concluida'},
-    {k:'entradaOficina',l:'Entrada na oficina',t:'date',hint:'Com saída vazia, o veículo fica "em manutenção".'},{k:'liberacao',l:'Liberação do veículo',t:'date'},
-    {k:'proximaData',l:'Próxima por data',t:'date'},{k:'proximaKm',l:'Próxima por km',t:'num'},
-    {k:'classe',l:'Tipo de custo para a F2',t:'sel',opts:opt(CLASSE),req:1,def:'variavel',show:v=>['f2','mau_uso_fatura'].includes(v.arcaCom) && +v.valor>0 && v.status==='concluida',hint:'A manutenção paga pela F2 vira uma conta no centro de custo do carro.'},
+    {k:'entradaOficina',l:'Entrada na oficina',t:'date',hint:'Com saída vazia, o veículo fica "em manutenção".',show:()=>!SO_F2},{k:'liberacao',l:'Liberação do veículo',t:'date',show:()=>!SO_F2},
+    {k:'proximaData',l:'Próxima por data',t:'date',show:()=>!SO_F2},{k:'proximaKm',l:'Próxima por km',t:'num',show:()=>!SO_F2},
+    {k:'classe',l:'Tipo de custo para a F2',t:'sel',opts:opt(CLASSE),req:1,def:'variavel',show:v=>!SO_F2 && ['f2','mau_uso_fatura'].includes(v.arcaCom) && +v.valor>0 && v.status==='concluida',hint:'A manutenção paga pela F2 vira uma conta no centro de custo do carro.'},
     {k:'descricao',l:'Descrição do serviço',t:'area',full:1},{k:'nf',l:'Nota fiscal / recibo',t:'file',accept:'image/*,application/pdf',full:1}],
     async save(v,id){
       const ant=id?G('manutencoes',id):null; const contaId=v.contaId||(ant&&ant.contaId);
+      if(contaId && G('contas',contaId) && v.arcaCom==='cliente'){ const k=G('contas',contaId); const nid=await salvar('manutencoes',id,{...v,contaId:null});
+        await salvar('contas',contaId,{manutId:null,manutCat:''},'desvinculou manutenção'); await SCHEMA.contas.save({...G('contas',contaId),status:'cancelada'},contaId,G('contas',contaId)); return nid; }
       if(contaId && G('contas',contaId)){ const nid=await salvar('manutencoes',id,v); const k=G('contas',contaId);
         await SCHEMA.contas.save({...k,valor:+v.valor||0,fornecedor:v.oficina||k.fornecedor||'',manutCat:v.status==='cancelada'?'':v.categoria,manutData:v.data,manutKm:v.km||null,descricao:v.descricao||k.descricao,status:v.status==='cancelada'?'cancelada':k.status},contaId,k);
         return nid; }
@@ -2587,9 +2590,9 @@ function preventivas(v){
 const PREV_ST={ok:['p-ok','Em dia'],proxima:['p-warn','Próxima'],vencida:['p-bad','Vencida']};
 function prevHTML(v, comBotao){
   const ps=preventivas(v);
-  const ult=p=>p.ult?`${dbr(p.ult.data)}${p.ult.km?' · '+kmf(p.ult.km):''}${+p.ult.valor?' · '+money(p.ult.valor):''}`:'<span class="muted">sem registro</span>';
+  const ult=p=>p.ult?`${dbr(p.ult.data)}${p.ult.km?' · '+kmf(p.ult.km):''}${+p.ult.valor?' · '+money(p.ult.valor):''}${p.ult.arcaCom==='cliente'?' <small class="muted">· pago pelo cliente</small>':''}`:'<span class="muted">sem registro</span>';
   const prox=p=>[p.pk!=null?kmf(p.pk)+(p.faltaKm!=null?(p.faltaKm>0?' (faltam '+kmf(p.faltaKm)+')':' (passou '+kmf(-p.faltaKm)+')'):''):'',p.pd?'até '+dbr(p.pd):''].filter(Boolean).join(' · ')+(p.ult?'':' <small class="muted">estimado</small>');
-  const pre=cat=>JSON.stringify({veiculoId:v.id,categoria:cat,arcaCom:'f2',km:kmAtual(v)||''}).replace(/'/g,'&#39;');
+  const pre=cat=>JSON.stringify({veiculoId:v.id,categoria:cat,km:kmAtual(v)||''}).replace(/'/g,'&#39;');
   return `<section class="stack" style="gap:8px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Últimas trocas</h3></div>
     ${ps.length?tabela([{h:'Item',f:p=>`<b>${esc(p.nome)}</b>`},{h:'Última vez',f:ult},{h:'Próxima',f:prox},{h:'Situação',f:p=>`<span class="pill ${PREV_ST[p.st][0]}">${PREV_ST[p.st][1]}</span>`},{h:'',f:p=>`<button class="btn sm" data-act="new" data-k="manutencoes" data-preset='${pre(p.cat)}' data-stop>Registrar troca</button>`}],ps,''):'<p class="muted" style="margin:0">Nenhum controle definido em Configurações → Manutenção preventiva.</p>'}
     <small class="muted">Dica: ao lançar a conta da oficina em Contas a pagar, escolha o carro e o tipo de manutenção; a troca entra aqui sozinha. "Estimado" = ainda sem troca registrada, contado a partir do cadastro do carro.</small></section>`;
