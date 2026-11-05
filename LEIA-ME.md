@@ -12,6 +12,13 @@ Pasta pronta para publicar. O sistema é um site estático (Vercel) que guarda t
 | `manifest.webmanifest`, `icon.svg` | Permitem instalar o site como app no celular |
 | `vercel.json` | Cabeçalhos de segurança e cache para o Vercel |
 
+## Versão 12: painel enxuto e clicável
+
+- Cada cartão do Painel abre a tela correspondente: Clientes, Frota (Veículos), Contratos ativos, Faturas e Contas a pagar. Os do mês (Faturado, Custos e Resultado) abrem Faturas e Resultado.
+- Saiu do Painel o que não serve na fase de cadastro: "A receber até o fim dos contratos", "Capital na frota" (continua em Rentabilidade), o gráfico vazio, a lista repetida de carros e o controle de km sem franquia.
+- O bloco do mês, o gráfico, "Em uso agora" e "Controle de km" só aparecem quando há dados.
+- As abas "Rentabilidade por carro" e "Clientes e risco" aparecem sozinhas quando houver faturas/contas lançadas e 2 ou mais clientes com contrato.
+
 ## Versão 11: limpeza e correções
 
 - Painel: a frota mostra quantos carros há em cada situação (a soma bate com o total). "A receber" agora mostra "—" quando os contratos são mensais sem prazo e diz o valor por mês. "Capital na frota" avisa quando falta o preço de compra dos carros. O mês mostra "Faturado" e o aluguel previsto lado a lado.

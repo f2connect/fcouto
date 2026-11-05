@@ -79,6 +79,7 @@ h3{font-size:13px;letter-spacing:.07em;text-transform:uppercase;color:var(--mute
 .kpi span{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .kpi b{font-family:var(--f-display);font-size:23px;font-variant-numeric:tabular-nums;display:block;margin-top:2px}
 .kpi small{color:var(--muted);font-size:12px}
+.kpi-l{cursor:pointer;transition:border-color .15s,box-shadow .15s}.kpi-l:hover,.kpi-l:focus-visible{border-color:var(--accent);box-shadow:0 1px 0 var(--accent);outline:none}.kpi-l span{display:flex;justify-content:space-between;gap:6px}.kpi-l span i{font-style:normal;font-size:16px;line-height:1;color:var(--accent)}
 .tw{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
 table{border-collapse:collapse;width:100%;font-size:14px}
 th{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;font-weight:600;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--surface-2)}
@@ -1280,7 +1281,7 @@ function vResultado(){
 }
 function graficoMeses(){
   const ms=[]; for(let i=5;i>=0;i--) ms.push(mesMais(mesAtual(),-i));
-  const ds=ms.map(m=>({m,...resumoFin(()=>true,x=>x===m)})); if(!ds.some(d=>d.rec||d.custo)) return '<div class="note i">O gráfico dos últimos 6 meses aparece quando houver faturas emitidas ou contas lançadas.</div>'; const mx=Math.max(1,...ds.map(d=>Math.max(d.rec,d.custo)));
+  const ds=ms.map(m=>({m,...resumoFin(()=>true,x=>x===m)})); if(ds.filter(d=>d.rec||d.custo).length<2) return ''; const mx=Math.max(1,...ds.map(d=>Math.max(d.rec,d.custo)));
   const W=720,H=200,pl=70,pr=10,pt=14,pb=30; const gw=(W-pl-pr)/ds.length; const bw=Math.min(26,gw/3.4); const Y=v=>H-pb-(v/mx)*(H-pt-pb);
   const ticks=[0,mx/2,mx];
   return `<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Últimos 6 meses</h3><div class="row" style="gap:14px;font-size:12.5px"><span><span class="lg" style="background:var(--accent)"></span> Receita</span><span><span class="lg" style="background:var(--amber)"></span> Custo fixo</span><span><span class="lg" style="background:var(--info)"></span> Custo variável</span></div></div>
@@ -1350,20 +1351,23 @@ function vPainelGeral(al){
   const cAb=contasAtivas().filter(c=>c.status==='aberta'); const cVenc=cAb.filter(contaVencida); const cSem=cAb.filter(c=>!contaVencida(c)&&c.vencimento<=addDias(hoje(),7));
   const capital=ativos.reduce((s,v)=>s+(+v.aqPreco||0)+(+v.aqCustos||0),0); const semPreco=ativos.filter(v=>!+v.aqPreco).length;
   const conts=cs.filter(c=>c.kmContratado);
-  const frotaTxt=Object.entries(ativos.reduce((o,v)=>{ const st=statusVeiculo(v); o[st]=(o[st]||0)+1; return o; },{})).sort((a,b)=>b[1]-a[1]).map(([st,n])=>`${n} ${(VSTATUS[st]||st).toLowerCase()}`).join(' · ');
+  const frotaTxt=Object.entries(ativos.reduce((o,v)=>{ const st=statusVeiculo(v); o[st]=(o[st]||0)+1; return o; },{})).sort((a,b)=>b[1]-a[1]).map(([st,n])=>{ let l=(VSTATUS[st]||st).toLowerCase(); if(n>1) l=({'alugado':'alugados','disponível':'disponíveis','vendido':'vendidos','sinistrado':'sinistrados'})[l]||l; return `${n} ${l}`; }).join(' · ');
   const comPrazo=cs.filter(c=>c.fim), semPrazo=cs.filter(c=>!c.fim); const mensalSemPrazo=semPrazo.reduce((s,c)=>s+(+c.aluguel||0),0);
   const fatMes=L('faturas').filter(f=>f.status!=='cancelada'&&f.competencia===mesMais(m,-1)); const aEmitir=cs.filter(c=>c.inicio<=mesMais(m,-1)+'-31' && !fatMes.some(f=>f.contratoId===c.id));
-  return head('Painel',`Hoje, ${dbr(hoje())} · competência ${mesbr(m)}`,`${B('Gerar fatura','gerarFatura','',1)}`)+
+  const custoMes=r.fixa+r.variavel; const temMov=r.rec||custoMes;
+  const emUso=ativos.filter(v=>usoAberto(v.id));
+  const pendHTML=`<section class="card" style="padding:0"><div style="padding:14px 14px 8px"><h3>Pendências (${al.length})</h3></div><div class="alerts">${al.length?al.slice(0,14).map((a,i)=>`<div class="alert" data-al="${i}" role="button" tabindex="0"><span class="sev ${a.sev}"></span><div><b>${esc(a.titulo)}</b><small>${esc(a.detalhe)}</small></div><span class="muted">›</span></div>`).join(''):'<div class="empty">Nenhuma pendência. Tudo em dia.</div>'}${al.length>14?`<div class="empty">+ ${al.length-14} pendências</div>`:''}</div></section>`;
+  const lado=[
+    emUso.length?`<section><h3>Em uso agora</h3>${tabela([{h:'Veículo',f:v=>placaHTML(v)},{h:'Com quem',f:v=>{const u=usoAberto(v.id); return `<b>${esc(nomeCondutor(u))}</b><br><small class="muted">desde ${dtbr(u.inicio)}</small>`;}}], emUso, '', v=>`data-go="veiculo" data-id="${v.id}" data-tab="uso"`)}</section>`:'',
+    conts.length?`<section><h3>Controle de km</h3>${tabela([{h:'Veículo',f:c=>vCell(c.veiculoId)},{h:'Consumo',f:c=>`<div style="min-width:170px">${kmBarHTML(c)}</div>`}], conts.sort((a,b)=>(consumo(b).pct||0)-(consumo(a).pct||0)), '', c=>`data-go="veiculo" data-id="${c.veiculoId}" data-tab="km"`)}</section>`:''
+  ].filter(Boolean);
+  const abTot=ab.reduce((s,f)=>s+(+f.total||0),0);
+  return head('Painel',`Hoje, ${dbr(hoje())}`,`${B('Gerar fatura','gerarFatura','',1)}`)+
   `<div class="stack">
-  <section><h3>Clientes e contratos</h3><div class="kpis">${kpi('Clientes com contrato',cliAt.size,L('clientes').length+' cadastrado(s)')}${kpi('Frota',ativos.length+' carro(s)',frotaTxt||'—')}${kpi('Aluguel por mês',money(mensal),cs.length+' contrato(s) ativo(s)')}${kpi('A receber até o fim dos contratos',comPrazo.length?money(aRec):'—',(comPrazo.length?comPrazo.length+' contrato(s) com prazo, estimado':'nenhum contrato com prazo')+(semPrazo.length?` · ${semPrazo.length} mensal(is) sem prazo: ${money(mensalSemPrazo)}/mês`:''))}${kpi('Faturas em aberto',money(ab.reduce((s,f)=>s+(+f.total||0),0)),atr.length?`<em class="neg">${atr.length} em atraso</em>`:aEmitir.length?`<em class="neg">${aEmitir.length} de ${mesbr(mesMais(m,-1))} sem emitir</em>`:'nenhuma em atraso')}${kpi('Capital na frota',capital?money(capital):'—',semPreco?`<em class="neg">falta o preço de compra de ${semPreco} carro(s)</em>`:'compra dos carros ativos')}</div></section>
-  <section><h3>Mês de ${mesbr(m)}</h3><div class="kpis">${kpi('Faturado',money(r.rec),'aluguel previsto: '+money(mensal))}${kpi('Custo fixo',money(r.fixa),'')}${kpi('Custo variável',money(r.variavel),'')}${kpi('Resultado',`<em class="${r.res<0?'neg':''}">${money(r.res)}</em>`,r.mg!=null?'Margem '+nf(r.mg)+'%':r.rec?'':'as faturas do mês ainda não foram emitidas')}${kpi('Contas a pagar',money(cAb.reduce((s,c)=>s+(+c.valor||0),0)),cVenc.length?`<em class="neg">${cVenc.length} vencida(s)</em>`:cSem.length?cSem.length+' vence(m) em 7 dias':'em dia')}</div></section>
-  ${graficoMeses()}
-  <div class="grid2">
-    <section class="card" style="padding:0"><div style="padding:14px 14px 8px"><h3>Pendências (${al.length})</h3></div><div class="alerts">${al.length?al.slice(0,14).map((a,i)=>`<div class="alert" data-al="${i}" role="button" tabindex="0"><span class="sev ${a.sev}"></span><div><b>${esc(a.titulo)}</b><small>${esc(a.detalhe)}</small></div><span class="muted">›</span></div>`).join(''):'<div class="empty">Nenhuma pendência. Tudo em dia.</div>'}${al.length>14?`<div class="empty">+ ${al.length-14} pendências</div>`:''}</div></section>
-    <div class="stack">
-      <section><h3>Quem está com cada carro agora</h3>${tabela([{h:'Veículo',f:v=>placaHTML(v)},{h:'Situação',f:v=>{const u=usoAberto(v.id); return u?`<b>${esc(nomeCondutor(u))}</b><br><small class="muted">desde ${dtbr(u.inicio)}</small>`:statusPill(v);}}], ativos, 'Sem veículos.', v=>`data-go="veiculo" data-id="${v.id}" data-tab="uso"`)}</section>
-      <section><h3>Controle de km</h3>${tabela([{h:'Veículo',f:c=>vCell(c.veiculoId)},{h:'Consumo',f:c=>`<div style="min-width:170px">${kmBarHTML(c)}</div>`}], conts.sort((a,b)=>(consumo(b).pct||0)-(consumo(a).pct||0)), 'Nenhum contrato ativo com franquia de km.', c=>`data-go="veiculo" data-id="${c.veiculoId}" data-tab="km"`)}</section>
-    </div></div></div>`;
+  <div class="kpis">${kpiL('Clientes',cliAt.size,cliAt.size===1?'com contrato ativo':'com contrato ativo','clientes')}${kpiL('Frota',ativos.length+(ativos.length===1?' carro':' carros'),frotaTxt||'—','veiculos')}${kpiL('Contratos ativos',cs.length,money(mensal)+' por mês','contratos')}${kpiL('Faturas',abTot?money(abTot):aEmitir.length?`<em class="neg">${aEmitir.length} a emitir</em>`:'Em dia',atr.length?`<em class="neg">${atr.length} em atraso</em>`:abTot?ab.length+' em aberto':aEmitir.length?'de '+mesbr(mesMais(m,-1)):'nenhuma em aberto','receber')}${kpiL('Contas a pagar',money(cAb.reduce((s,c)=>s+(+c.valor||0),0)),cVenc.length?`<em class="neg">${cVenc.length} vencida(s)</em>`:cSem.length?cSem.length+' vence(m) em 7 dias':'em dia','fixas')}</div>
+  ${temMov?`<section><h3>Mês de ${mesbr(m)}</h3><div class="kpis">${kpiL('Faturado',money(r.rec),'previsto: '+money(mensal),'receber')}${kpiL('Custos',money(custoMes),'fixos '+money(r.fixa)+' · variáveis '+money(r.variavel),'resultado')}${kpiL('Resultado',`<em class="${r.res<0?'neg':''}">${money(r.res)}</em>`,r.mg!=null?'margem '+nf(r.mg)+'%':'','resultado')}</div></section>${graficoMeses()}`:''}
+  ${lado.length?`<div class="grid2">${pendHTML}<div class="stack">${lado.join('')}</div></div>`:pendHTML}
+  </div>`;
 }
 function vClientes(){
   const cs=L('clientes'); const at=cs.filter(c=>L('contratos').some(x=>x.clienteId===c.id&&contratoAtivo(x))); const out=cs.filter(c=>!at.includes(c));
@@ -1414,9 +1418,12 @@ const P_DTABS=[['geral','Visão geral'],['rentab','Rentabilidade por carro'],['c
 const PAINEL_FIN=['rentab','caixa'];
 function vPainel(al){
   if(!L('veiculos').length && !L('clientes').length) return vPainelGeral(al);
-  const fin=pode('resultado'); const tabs=P_DTABS.filter(t=>fin||!PAINEL_FIN.includes(t[0]));
+  const fin=pode('resultado');
+  const temFin=L('faturas').some(f=>f.status!=='cancelada') || contasAtivas().length>0;
+  const nCli=new Set(L('contratos').filter(c=>contratoAtivo(c)).map(c=>c.clienteId)).size;
+  const tabs=P_DTABS.filter(t=>(fin||!PAINEL_FIN.includes(t[0])) && (t[0]!=='rentab'||temFin) && (t[0]!=='clientes'||nCli>=2));
   let t=S.ui.ptab||'geral'; if(!tabs.some(x=>x[0]===t)) t='geral';
-  const bar=`<div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-ptab="${k}">${l}</button>`).join('')}</div>`;
+  const bar=tabs.length<2?'':`<div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-ptab="${k}">${l}</button>`).join('')}</div>`;
   if(t==='rentab') return head('Painel','Rentabilidade de cada carro desde a compra',B('Exportar CSV','csvRentab'))+bar+vRentab();
   if(t==='caixa') return head('Painel','Fluxo de caixa previsto para os próximos 6 meses')+bar+vFluxo();
   if(t==='clientes') return head('Painel','Clientes, concentração da receita e risco de cada um')+bar+vRisco();
@@ -2472,7 +2479,7 @@ document.addEventListener('click', async e=>{
   }catch(ex){ toast(errMsg(ex)); }
 });
 document.addEventListener('input',e=>{ if(e.target.id==='vbusca') filtrarVeiculos(e.target.value); });
-document.addEventListener('keydown',e=>{ if(e.key==='Enter'){ const al=e.target.closest&&e.target.closest('[data-al]'); if(al) al.click(); } });
+document.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ const al=e.target.closest&&e.target.closest('[data-al],.kpi-l'); if(al){ e.preventDefault(); al.click(); } } });
 document.addEventListener('change',e=>{ if(e.target.id==='mel_s'){ S.ui.melSt=e.target.value; render(); return; } if(e.target.id==='fx_s'){ try{ localStorage.setItem('f2_saldo_caixa',e.target.value); }catch(x){} render(); return; } if(e.target.id==='fin_m'){ S.ui.mes=e.target.value||mesAtual(); render(); } if(e.target.id==='ab_m'){ S.ui.mesAb=e.target.value||mesAtual(); render(); } if(e.target.id==='fc_m'){ S.ui.mesC=e.target.value||mesAtual(); render(); } if(e.target.id==='fc_c'){ S.ui.centro=e.target.value; render(); } const k=e.target.dataset&&e.target.dataset.pf; if(k && S.p){ S.p.f=S.p.f||{}; S.p.f[k]=e.target.value; render(); } });
 async function salvarCfg(p){ const n={...(G('config','geral')||{}),...p,atualizadoEm:new Date().toISOString(),atualizadoPor:S.uid}; await S.db.doc('config/geral').set(limpa(n)); audit('alterou parâmetros','config','geral',Object.keys(p).join(', ')); toast('Configurações salvas.'); }
 async function salvarPlanos(lista){ await S.db.doc('config/planos').set(limpa({lista,atualizadoEm:new Date().toISOString(),atualizadoPor:S.uid})); const g=G('config','geral'); if(g&&(g.planos||[]).length) await S.db.doc('config/geral').set(limpa({...g,id:undefined,planos:[]})); audit('alterou modelos de plano','config','planos',lista.length+' modelo(s)'); toast('Modelos de plano salvos.'); }
@@ -2831,6 +2838,7 @@ function acoesVeiculo(vid){
   return `<div class="qa">${qa.join('')}</div>`;
 }
 function kpi(t,v,s){ return `<div class="kpi"><span>${t}</span><b>${v}</b>${s?`<small>${s}</small>`:''}</div>`; }
+function kpiL(t,v,s,view,tab){ if(!view||!pode(view)) return kpi(t,v,s); return `<div class="kpi kpi-l" data-go="${view}"${tab?` data-tab="${tab}"`:''} role="button" tabindex="0" title="Abrir"><span>${t}<i aria-hidden="true">›</i></span><b>${v}</b>${s?`<small>${s}</small>`:''}</div>`; }
 function pInicioG(){
   const al=pAlertas(); const cs=contratosAtivosCli(); const vs=cs.map(c=>G('veiculos',c.veiculoId)).filter(Boolean); const h=hoje(); const m=mesAtual(); const ini=m+'-01', fim=isoD(new Date(+m.slice(0,4),+m.slice(5,7),0));
   const emUso=vs.filter(v=>usoAberto(v.id)).length; const kmMes=vs.reduce((s,v)=>s+kmNoPeriodo(v.id,ini,fim),0);
