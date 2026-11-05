@@ -12,6 +12,11 @@ Pasta pronta para publicar. O sistema é um site estático (Vercel) que guarda t
 | `manifest.webmanifest`, `icon.svg` | Permitem instalar o site como app no celular |
 | `vercel.json` | Cabeçalhos de segurança e cache para o Vercel |
 
+## Versão 15: km do mês
+
+- Nova tela Veículos → **Km do mês**: todos os carros numa lista, com o último km e um campo para o km de hoje. Salva tudo de uma vez e não aceita km menor que o último.
+- A partir do dia 5 (ajustável em Configurações → Avisos e prazos), o Painel mostra a pendência "Km do mês não lançado" com as placas que faltam. Clicar na pendência abre a tela.
+
 ## Versão 14: quem pagou a manutenção
 
 - No formulário de manutenção, logo depois do valor, o campo "Quem pagou": F2 ou Cliente. F2 vira conta paga no custo do carro; Cliente fica só no histórico (aparece "pago pelo cliente" nas Últimas trocas). Trocar de F2 para Cliente cancela a conta ligada.

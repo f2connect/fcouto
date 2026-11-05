@@ -340,7 +340,7 @@ const Anexos = {
 };
 
 
-const DEFAULT_CFG = { alertasKm:[70,85,100], horasCheckin:14, diasProjecao:30, diasAvisoVenc:30, diasAvisoMulta:5, limiteEmergencia:500, carenciaPadrao:0, matriz:{}, planos:[], prev:{pvRevKm:10000,pvRevMeses:12,pvOleoKm:10000,pvOleoMeses:12,pvAlinKm:10000,pvAlinMeses:0,pvPneuKm:30000,pvPneuMeses:60,pvBatKm:0,pvBatMeses:24}, prevAvisoKm:1000, prevAvisoDias:30 };
+const DEFAULT_CFG = { alertasKm:[70,85,100], horasCheckin:14, diasProjecao:30, diasAvisoVenc:30, diasAvisoMulta:5, limiteEmergencia:500, carenciaPadrao:0, matriz:{}, planos:[], prev:{pvRevKm:10000,pvRevMeses:12,pvOleoKm:10000,pvOleoMeses:12,pvAlinKm:10000,pvAlinMeses:0,pvPneuKm:30000,pvPneuMeses:60,pvBatKm:0,pvBatMeses:24}, prevAvisoKm:1000, prevAvisoDias:30, diaKmMes:5 };
 const cfg = () => { const g0=G('config','geral')||{}; const c={...DEFAULT_CFG, ...g0, prev:{...DEFAULT_CFG.prev,...(g0.prev||{})}}; const pl=G('config','planos'); if(pl) c.planos=pl.lista||[]; delete c.id; return c; };
 
 const CATS = [
@@ -480,6 +480,9 @@ function alertas(){
   for(const f of L('faturas').filter(f=>f.status==='aberta' && f.vencimento && f.vencimento<h)) add('b',`Fatura em atraso · ${mesbr(f.competencia)}`,`${money(f.total)} · venceu ${dbr(f.vencimento)}`,{view:'receber'});
   for(const m of L('multas').filter(m=>m.statusIndicacao!=='indicado' && m.prazoIndicacao)){ const dd=diff(h,m.prazoIndicacao); if(dd<=P.diasAvisoMulta) add(dd<0?'b':'w',`Prazo de indicação de condutor ${dd<0?'vencido':'em '+dd+' dias'}`,`Auto ${m.auto||'—'} · ${(G('veiculos',m.veiculoId)||{}).placa||''}`,{view:'veiculo',id:m.veiculoId,tab:'multas'}); }
   for(const m of L('manutencoes').filter(m=>m.arcaCom==='apuracao' && m.status!=='cancelada')) add('w',`Mau uso em apuração`,`${catLbl(m.categoria)} · ${(G('veiculos',m.veiculoId)||{}).placa||''} · decidir responsabilidade`,{view:'veiculo',id:m.veiculoId,tab:'manut'});
+  // km do mês
+  { const m=mesAtual(); if(+h.slice(8,10)>=(+P.diaKmMes||5)){ const falta=L('veiculos').filter(v=>statusVeiculo(v)!=='vendido' && !leiturasV(v.id).some(l=>(l.data||'').slice(0,7)===m));
+    if(falta.length) add('w',`Km de ${mesbr(m)} não lançado em ${falta.length} carro${falta.length>1?'s':''}`,falta.map(v=>(v.placa||'').toUpperCase()).join(', ')+' · clique para lançar',{view:'kmmes'}); } }
   // manutenção preventiva vencida
   for(const v of L('veiculos').filter(v=>statusVeiculo(v)!=='vendido')){
     for(const p of preventivas(v).filter(p=>p.st==='vencida')) add('w',`${p.nome} vencida em ${(v.placa||'').toUpperCase()}`,`${p.pk!=null?'Previsto '+kmf(p.pk)+' · atual '+kmf(kmAtual(v)):''}${p.pd?' · prazo '+dbr(p.pd):''} · sem comprovante novo`,{view:'veiculo',id:v.id,tab:'manut'});
@@ -962,10 +965,10 @@ const NAV = [
   ['grp','Operação'],['painel','Painel'],['clientes','Clientes'],['veiculos','Veículos'],['contratos','Contratos'],
   ['grp','Financeiro'],['receber','Faturas'],['contas','Contas a pagar'],['resultado','Resultado'],
   ['grp','Sistema'],['config','Configurações'],['melhorias','Melhorias'],['auditoria','Auditoria']];
-const PERM={admin:'*',operacional:['painel','clientes','cliente','veiculos','veiculo','contratos','melhorias'],financeiro:['painel','clientes','cliente','veiculos','veiculo','contratos','receber','contas','fixas','variaveis','resultado','melhorias']};
+const PERM={admin:'*',operacional:['painel','clientes','cliente','veiculos','veiculo','kmmes','contratos','melhorias'],financeiro:['painel','clientes','cliente','veiculos','veiculo','kmmes','contratos','receber','contas','fixas','variaveis','resultado','melhorias']};
 const pode = v => !!S.me && (PERM[S.me.perfil]==='*' || (PERM[S.me.perfil]||[]).includes(v));
 function renderNav(al){
-  const cur = S.route.view==='veiculo'?'veiculos':S.route.view==='cliente'?'clientes':['fixas','variaveis'].includes(S.route.view)?'contas':(['melhorias','auditoria'].includes(S.route.view)&&pode('config'))?'config':S.route.view;
+  const cur = ['veiculo','kmmes'].includes(S.route.view)?'veiculos':S.route.view==='cliente'?'clientes':['fixas','variaveis'].includes(S.route.view)?'contas':(['melhorias','auditoria'].includes(S.route.view)&&pode('config'))?'config':S.route.view;
   const itens=[]; let grp=null;
   for(const [k,l] of NAV){ if(k==='grp'){ grp=l; continue; } if(!pode(k)) continue; if(['melhorias','auditoria'].includes(k) && pode('config')) continue; if(grp){ itens.push(`<div class="grp">${grp}</div>`); grp=null; } itens.push(`<button data-go="${k}"${cur===k?' aria-current="page"':''}><span>${l}</span>${k==='painel'&&al.length?`<span class="cnt">${al.length}</span>`:''}</button>`); }
   $('#nav').innerHTML=itens.join('');
@@ -1033,6 +1036,7 @@ function vConfig(){
       ${campo('c_al','Avisar quando a franquia de km chegar a (%)',P.alertasKm.join(', '),'Separe por vírgula. Ex.: 70, 85, 100','txt')}
       ${campo('c_dv','Avisar vencimento de documentos e contratos (dias antes)',P.diasAvisoVenc)}
       ${campo('c_dm','Avisar prazo para indicar condutor de multa (dias antes)',P.diasAvisoMulta)}
+      ${campo('c_dk','Cobrar o km do mês a partir do dia',P.diaKmMes,'Se algum carro ficar sem km lançado no mês, aparece uma pendência a partir deste dia.')}
       <div${SO_F2?' hidden':''} style="display:contents">${campo('c_hc','Avisar check-in aberto há mais de (horas)',P.horasCheckin,'O motorista esqueceu de fazer o checkout.')}
       ${campo('c_le','Limite de despesa de emergência sem autorização (R$)',P.limiteEmergencia,'Valor padrão dos contratos novos.')}</div>
       ${campo('c_cr','Dias parados antes de dar desconto no aluguel',P.carenciaPadrao,'Valor padrão dos contratos novos (carro na oficina por culpa da F2).')}
@@ -1435,11 +1439,33 @@ function vCliente(id){
   return `<p class="muted" style="margin:0 0 6px"><button class="btn ghost sm" data-go="clientes">‹ Clientes</button></p>`+head(esc(c.nome)+isEx(c),`${esc(c.tipo||'')} · ${esc(c.documento||'sem documento')} · ${ativos.length} carro(s) alugado(s)`,B('Editar cliente','edit','data-k="clientes" data-id="'+id+'"'))+
     `<div class="tabs" role="tablist">${C_TABS.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-ctab="${k}">${l}</button>`).join('')}</div>`+body;
 }
+function vKmMes(){
+  const m=mesAtual(); const vs=L('veiculos').filter(v=>statusVeiculo(v)!=='vendido').sort((a,b)=>String(a.placa).localeCompare(String(b.placa)));
+  const ultL=v=>{ const ls=leiturasV(v.id); return ls.length?ls[ls.length-1]:null; };
+  const feitos=vs.filter(v=>leiturasV(v.id).some(l=>(l.data||'').slice(0,7)===m)).length;
+  return head('Km do mês',`Anote o odômetro de cada carro uma vez por mês. Atualiza os avisos de manutenção e o controle dos contratos. ${feitos} de ${vs.length} lançados em ${mesbr(m)}.`)+
+  `<div class="stack"><div class="fld" style="max-width:220px"><label for="km_dt">Data da leitura</label><input id="km_dt" type="date" value="${hoje()}"></div>
+  ${tabela([{h:'Carro',f:v=>placaHTML(v)},{h:'Situação',f:v=>statusPill(v)},{h:'Último km',f:v=>{const l=ultL(v); const ok=l&&(l.data||'').slice(0,7)===m; return l?`${kmf(+l.km)}<br><small class="${ok?'':'muted'}">${ok?'✓ lançado em '+dbr(l.data):dbr(l.data)}</small>`:kmf(kmAtual(v));}},
+    {h:'Km de hoje',f:v=>`<input id="km_${v.id}" data-kmv="${v.id}" type="text" inputmode="numeric" autocomplete="off" placeholder="Ex.: ${esc(nf(kmAtual(v)+1500))}" style="max-width:150px">`}],vs,'Nenhum carro na frota.')}
+  <p class="hint" id="km_err" hidden style="color:var(--danger)"></p>
+  <div class="row"><button class="btn pri" data-act="salvarKmMes">Salvar km</button><small class="muted">Pode deixar em branco os carros que não conseguiu ver; eles continuam na pendência.</small></div></div>`;
+}
+async function salvarKmMes(){
+  const er=$('#km_err'); er.hidden=true; const dt=($('#km_dt').value||hoje()); const lst=[]; const erros=[];
+  document.querySelectorAll('[data-kmv]').forEach(i=>{ const t=i.value.trim(); if(!t) return; const v=G('veiculos',i.dataset.kmv); const km=lerNumBR(t);
+    if(km===null||isNaN(km)||km<=0) erros.push(`${(v.placa||'').toUpperCase()}: número inválido`);
+    else if(km<kmAtual(v)) erros.push(`${(v.placa||'').toUpperCase()}: ${kmf(km)} é menor que o último registrado (${kmf(kmAtual(v))})`);
+    else lst.push([v,km]); });
+  if(erros.length){ er.textContent='Confira: '+erros.join(' · '); er.hidden=false; return; }
+  if(!lst.length){ er.textContent='Preencha o km de pelo menos um carro.'; er.hidden=false; return; }
+  for(const [v,km] of lst) await salvar('leituras',null,{veiculoId:v.id,km,data:dt+'T12:00',origem:'mensal',status:'verificada'},'lançou km do mês');
+  toast(`Km salvo em ${lst.length} carro${lst.length>1?'s':''}.`); render();
+}
 function vVeiculos(){
   const vs=L('veiculos'); const at=vs.filter(v=>statusVeiculo(v)!=='vendido'), vd=vs.filter(v=>statusVeiculo(v)==='vendido'); const q=S.ui.busca||'';
   const chave=v=>{ const c=contratoDoVeiculo(v.id); return [v.placa,v.marca,v.modelo,v.versao,v.cor,v.renavam,c?nomeCliente(c.clienteId):'',VSTATUS[statusVeiculo(v)]].join(' ').toLowerCase(); };
   const card=v=>`<div data-busca="${esc(chave(v))}">${vCard(v)}</div>`;
-  return head('Veículos',`${at.length} na frota${vd.length?' · '+vd.length+' vendido(s), com histórico preservado':''}`,B('Novo veículo','new','data-k="veiculos"',1))+
+  return head('Veículos',`${at.length} na frota${vd.length?' · '+vd.length+' vendido(s), com histórico preservado':''}`,B('Km do mês','go_kmmes','')+B('Novo veículo','new','data-k="veiculos"',1))+
   `<div class="stack"><div class="fld" style="max-width:520px"><label for="vbusca">Procurar veículo</label><input id="vbusca" type="search" placeholder="Placa, modelo, cliente ou situação" value="${esc(q)}" autocomplete="off"></div>
   ${at.length?`<div class="vgrid" id="vlista">${at.map(card).join('')}</div>`:'<div class="tw"><div class="empty">Nenhum veículo cadastrado.</div></div>'}<p class="muted" id="vnada" hidden>Nenhum veículo encontrado.</p>
   ${vd.length?`<details><summary class="muted">Vendidos (${vd.length})</summary><div class="vgrid" style="margin-top:10px">${vd.map(card).join('')}</div></details>`:''}</div>`;
@@ -1721,7 +1747,7 @@ function agTools(){
     {name:'indicadores',description:'Números calculados pelo sistema (os mesmos das telas). visao_geral: resumo da empresa; resultado: receita, custo fixo/variável e resultado por mês (veiculo = placa ou "adm"); rendimento: quanto cada carro rende por mês (faturamento menos despesas fixas, como consórcio e seguro); rentabilidade: por carro desde a compra; fluxo_caixa: previsão dos próximos meses; clientes_risco: concentração e inadimplência; franquia_km: consumo das franquias; combustivel: litros e gasto do mês; pendencias: avisos do painel.',
       input_schema:{type:'object',properties:{tipo:{type:'string',enum:ind},mes:{type:'string',description:'AAAA-MM'},veiculo:{type:'string'},meses:{type:'integer'}},required:['tipo']}},
     {name:'abrir_tela',description:'Leva a pessoa para uma tela do sistema (ex.: a ficha de um carro).',
-      input_schema:{type:'object',properties:{tela:{type:'string',enum:ehGestor()?['inicio','contratos','uso','abast','manut','chamados','faturas','multas','condutores','veiculo']:['painel','clientes','cliente','veiculos','veiculo','contratos','receber','fixas','variaveis','resultado','config','melhorias','auditoria'].filter(v=>['cliente','veiculo'].includes(v)||pode(v))},veiculo:{type:'string',description:'placa, para tela veiculo'},cliente:{type:'string',description:'nome, para tela cliente'},aba:{type:'string',description:'para veiculo: resumo|rende|contrato|uso|km|abast|vist|manut|chamados|docs|multas|fin|historico; para painel: geral|rentab|caixa|clientes'}},required:['tela']}},
+      input_schema:{type:'object',properties:{tela:{type:'string',enum:ehGestor()?['inicio','contratos','uso','abast','manut','chamados','faturas','multas','condutores','veiculo']:['painel','clientes','cliente','veiculos','veiculo','kmmes','contratos','receber','contas','resultado','config','melhorias','auditoria'].filter(v=>['cliente','veiculo'].includes(v)||pode(v))},veiculo:{type:'string',description:'placa, para tela veiculo'},cliente:{type:'string',description:'nome, para tela cliente'},aba:{type:'string',description:'para veiculo: resumo|rende|contrato|uso|km|abast|vist|manut|chamados|docs|multas|fin|historico; para painel: geral|rentab|caixa|clientes'}},required:['tela']}},
     {name:'preparar_registro',description:'Prepara um formulário já preenchido para a pessoa conferir e salvar. NUNCA grava sozinho. Tipos: '+forms.map(k=>`${k} = ${agForms()[k]}`).join('; ')+'. Campos de cada tipo estão no contexto.',
       input_schema:{type:'object',properties:{tipo:{type:'string',enum:forms},campos:{type:'object',description:'chave do campo → valor'},resumo:{type:'string',description:'uma frase dizendo o que será lançado'}},required:['tipo','campos','resumo']}}];
   if(agFin()) t.push({name:'pagar_conta',description:'Marca uma conta a pagar como paga (a pessoa confirma com um clique). Descubra o id com consultar_dados (colecao contas, status aberta).',input_schema:{type:'object',properties:{conta_id:{type:'string'},data_pagamento:{type:'string',description:'AAAA-MM-DD; vazio = hoje'}},required:['conta_id']}});
@@ -2434,7 +2460,7 @@ function render(){
   const r=S.route; let h='';
   switch(r.view){
     case 'painel': h=vPainel(al); break; case 'clientes': h=vClientes(); break; case 'cliente': h=vCliente(r.id); break;
-    case 'veiculos': h=vVeiculos(); break; case 'veiculo': h=vVeiculo(r.id); break; case 'contratos': h=vContratos(); break;
+    case 'veiculos': h=vVeiculos(); break; case 'kmmes': h=vKmMes(); break; case 'veiculo': h=vVeiculo(r.id); break; case 'contratos': h=vContratos(); break;
     case 'uso': h=vUso(); break; case 'abast': h=vAbastF2(); break; case 'manut': h=vManut(); break; case 'reemb': h=vReemb(); break; case 'multas': h=vMultas(); break;
     case 'docs': h=vDocs(); break; case 'vistorias': h=vVistorias(); break; case 'faturas': case 'receber': h=vReceber(); break; case 'financeiro': case 'resultado': h=vResultado(); break; case 'contas': case 'fixas': case 'variaveis': h=vContas('todas'); break; case 'config': h=vConfig(); break; case 'auditoria': h=vAuditoria(); break; case 'melhorias': h=vMelhorias(); break;
   }
@@ -2467,6 +2493,8 @@ document.addEventListener('click', async e=>{
     else if(a==='docContrato') abrirDocContrato(id);
     else if(a==='modeloContrato'){ if(S.me.perfil!=='admin'){ toast('Só o administrador altera o modelo do contrato.'); return; } openModeloContrato(); }
     else if(a==='csvRentab') csv(`rentabilidade-${hoje()}.csv`,linhasRentab(),[['Placa',r=>PL(r.v.id)],['Modelo',r=>r.v.modelo||''],['Situação',r=>VSTATUS[r.status]||r.status],['Receita acumulada',r=>nf(r.acc.rec,2)],['Custos acumulados',r=>nf(r.acc.custo,2)],['Resultado acumulado',r=>nf(r.acc.res,2)],['Preço de compra',r=>nf(r.compra,2)],['Retorno sobre a compra (%)',r=>r.roi!=null?nf(r.roi,1):''],['Km rodado',r=>r.kmRod],['Custo por km',r=>r.custoKm!=null?nf(r.custoKm,2):''],['Aluguel ÷ compra (%/mês)',r=>r.yieldMes!=null?nf(r.yieldMes,2):''],['Resultado médio 3 meses',r=>r.med!=null?nf(r.med,2):''],['Rende por mês (aluguel − fixas)',r=>nf(r.rendeMes,2)],['Despesas fixas por mês',r=>nf(r.fixasMes,2)],['Meses para se pagar',r=>r.payback!=null?nf(r.payback,0):'']]);
+    else if(a==='salvarKmMes') await salvarKmMes();
+    else if(a==='go_kmmes') go('kmmes');
     else if(a==='centroAdm'){ S.ui.centro=CENTRO_ADM; go('contas'); }
     else if(a==='sairVerComo') sairVerComo();
     else if(a==='pvtab'){ S.p.vtab=el.dataset.tab||'resumo'; render(); }
@@ -2520,7 +2548,7 @@ async function salvarCfg(p){ const n={...(G('config','geral')||{}),...p,atualiza
 async function salvarPlanos(lista){ await S.db.doc('config/planos').set(limpa({lista,atualizadoEm:new Date().toISOString(),atualizadoPor:S.uid})); const g=G('config','geral'); if(g&&(g.planos||[]).length) await S.db.doc('config/geral').set(limpa({...g,id:undefined,planos:[]})); audit('alterou modelos de plano','config','planos',lista.length+' modelo(s)'); toast('Modelos de plano salvos.'); }
 function bindConfig(){ const imp=$('#cf_imp'); if(imp) imp.onchange=e=>{ const fl=e.target.files[0]; e.target.value=''; if(fl) importar(fl); }; const f=$('#cfgf'); if(!f) return; f.onsubmit=async e=>{ e.preventDefault(); const g=id=>f.querySelector(id).value;
   const matriz={}; CATS.forEach(c=>matriz[c[0]]=f.querySelector('#mz_'+c[0]).value);
-  try{ await salvarCfg({alertasKm:g('#c_al').split(',').map(x=>+x.trim()).filter(x=>x>0).sort((a,b)=>a-b),horasCheckin:+g('#c_hc')||14,diasProjecao:+g('#c_dp')||30,diasAvisoVenc:+g('#c_dv')||30,diasAvisoMulta:+g('#c_dm')||5,limiteEmergencia:+g('#c_le')||0,carenciaPadrao:+g('#c_cr')||0,matriz,prev:Object.fromEntries(PV_CAMPOS.map(([k])=>[k,+g('#pv_'+k)||0])),prevAvisoKm:+g('#c_pak')||1000,prevAvisoDias:+g('#c_pad')||30}); }catch(ex){ toast(errMsg(ex)); } }; }
+  try{ await salvarCfg({alertasKm:g('#c_al').split(',').map(x=>+x.trim()).filter(x=>x>0).sort((a,b)=>a-b),horasCheckin:+g('#c_hc')||14,diasProjecao:+g('#c_dp')||30,diasAvisoVenc:+g('#c_dv')||30,diasAvisoMulta:+g('#c_dm')||5,diaKmMes:Math.min(28,Math.max(1,+g('#c_dk')||5)),limiteEmergencia:+g('#c_le')||0,carenciaPadrao:+g('#c_cr')||0,matriz,prev:Object.fromEntries(PV_CAMPOS.map(([k])=>[k,+g('#pv_'+k)||0])),prevAvisoKm:+g('#c_pak')||1000,prevAvisoDias:+g('#c_pad')||30}); }catch(ex){ toast(errMsg(ex)); } }; }
 function openPlano(){
   const dlg=$('#dlg'); dlg.innerHTML=`<form id="frm"><div class="dh"><h2>Novo modelo de plano</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc"><div class="fgrid">
     <div class="fld full"><label for="pl_n">Nome</label><input id="pl_n" placeholder="Ex.: Executivo 24m · 2.000 km"></div><div class="fld"><label for="pl_p">Prazo (meses)</label><input id="pl_p" type="number" required></div><div class="fld"><label for="pl_k">Franquia (km/mês)</label><input id="pl_k" type="number" required></div>
