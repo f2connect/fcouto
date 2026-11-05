@@ -12,6 +12,14 @@ Pasta pronta para publicar. O sistema é um site estático (Vercel) que guarda t
 | `manifest.webmanifest`, `icon.svg` | Permitem instalar o site como app no celular |
 | `vercel.json` | Cabeçalhos de segurança e cache para o Vercel |
 
+## Versão 13: só a F2, contas numa tela e últimas trocas
+
+- Modo interno: saíram a área do cliente, a área do motorista, check-in/checkout, QR code, abastecimento e chamados. Quem abre /cliente ou /motorista vê "Área desativada". Nada foi apagado: para religar, trocar `SO_F2 = true` para `false` no index.html.
+- Menu: Painel, Clientes, Veículos, Contratos · Faturas, Contas a pagar, Resultado · Configurações (Melhorias e Histórico de alterações ficam dentro de Configurações).
+- Contas a pagar junta fixas e variáveis. Ao lançar uma conta de um carro, dá para marcar o tipo de manutenção (pneus, bateria, alinhamento, óleo, revisão, freios...) com data e km: a troca entra no histórico do carro e o km é atualizado. Editar a manutenção atualiza a mesma conta.
+- Cada carro mostra o quadro "Últimas trocas" (pneus a cada 30.000 km ou 5 anos, bateria a cada 2 anos, alinhamento, óleo e revisão), com botão "Registrar troca". Os prazos ficam em Configurações → Manutenção preventiva.
+- Gerar fatura pede o km atual do carro (opcional); não aceita km menor que o último registrado.
+
 ## Versão 12: painel enxuto e clicável
 
 - Cada cartão do Painel abre a tela correspondente: Clientes, Frota (Veículos), Contratos ativos, Faturas e Contas a pagar. Os do mês (Faturado, Custos e Resultado) abrem Faturas e Resultado.
@@ -179,4 +187,3 @@ O isolamento entre clientes é feito pelas regras do banco (Row Level Security):
 - O plano gratuito do Supabase tem limites de uso e pode pausar projetos inativos. Confira em supabase.com/pricing antes de colocar em produção.
 - Notificações chegam como avisos dentro do sistema. E-mail e WhatsApp automáticos ficam para a etapa 2.
 - Depreciação, valor de mercado, índice de saúde, ponto ótimo de venda e simulador de compra seguem nas etapas 2 e 3 do Prompt-Mestre.
-

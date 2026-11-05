@@ -340,14 +340,18 @@ const Anexos = {
 };
 
 
-const DEFAULT_CFG = { alertasKm:[70,85,100], horasCheckin:14, diasProjecao:30, diasAvisoVenc:30, diasAvisoMulta:5, limiteEmergencia:500, carenciaPadrao:0, matriz:{}, planos:[], prev:{pvRevKm:10000,pvRevMeses:12,pvOleoKm:10000,pvOleoMeses:12,pvAlinKm:10000,pvAlinMeses:0}, prevAvisoKm:1000, prevAvisoDias:30 };
-const cfg = () => { const c={...DEFAULT_CFG, ...(G('config','geral')||{})}; const pl=G('config','planos'); if(pl) c.planos=pl.lista||[]; delete c.id; return c; };
+const DEFAULT_CFG = { alertasKm:[70,85,100], horasCheckin:14, diasProjecao:30, diasAvisoVenc:30, diasAvisoMulta:5, limiteEmergencia:500, carenciaPadrao:0, matriz:{}, planos:[], prev:{pvRevKm:10000,pvRevMeses:12,pvOleoKm:10000,pvOleoMeses:12,pvAlinKm:10000,pvAlinMeses:0,pvPneuKm:30000,pvPneuMeses:60,pvBatKm:0,pvBatMeses:24}, prevAvisoKm:1000, prevAvisoDias:30 };
+const cfg = () => { const g0=G('config','geral')||{}; const c={...DEFAULT_CFG, ...g0, prev:{...DEFAULT_CFG.prev,...(g0.prev||{})}}; const pl=G('config','planos'); if(pl) c.planos=pl.lista||[]; delete c.id; return c; };
 
 const CATS = [
   ['preventiva','Preventiva / revisão','cliente'],['oleo','Troca de óleo','cliente'],['alinhamento','Alinhamento e balanceamento','cliente'],['lavagem','Lavagem','cliente'],
   ['corretiva','Corretiva (desgaste ou defeito)','f2'],['pneus','Pneus (desgaste natural)','f2'],['bateria','Bateria (vida útil normal)','f2'],['freios','Freios','f2'],['suspensao','Suspensão','f2'],
   ['eletrica','Elétrica','f2'],['motor','Motor','f2'],['transmissao','Transmissão','f2'],['ar','Ar-condicionado','f2'],['mau_uso','Dano por mau uso','apuracao'],['outra','Outra','f2']];
 const PREVENTIVAS = ['preventiva','oleo','alinhamento'];
+/* Modo interno: só a equipe da F2 usa o sistema (sem área do cliente, motorista, check-in e QR). */
+const SO_F2 = true;
+const MANUT_CONTA = ['pneus','bateria','alinhamento','oleo','preventiva','freios','suspensao','eletrica','motor','ar','corretiva','outra'];
+const MANUT_LBL = {pneus:'Pneus',bateria:'Bateria',alinhamento:'Alinhamento e balanceamento',oleo:'Troca de óleo',preventiva:'Revisão',freios:'Freios',suspensao:'Suspensão',eletrica:'Elétrica',motor:'Motor',ar:'Ar-condicionado',corretiva:'Outro conserto',outra:'Outra manutenção'};
 const ARCA = [['cliente','Cliente paga direto'],['f2','F2 paga'],['apuracao','Mau uso em apuração'],['mau_uso_fatura','Mau uso confirmado — F2 paga e cobra na fatura'],['mau_uso_cliente','Mau uso confirmado — cliente paga direto']];
 const arcaPadrao = cat => (cfg().matriz||{})[cat] || (CATS.find(c=>c[0]===cat)||[])[2] || 'f2';
 const catLbl = k => (CATS.find(c=>c[0]===k)||[,k])[1];
@@ -466,25 +470,25 @@ function alertas(){
   // documentos: último de cada tipo por veículo
   const ult={}; for(const d of L('documentos').filter(d=>d.vencimento)){ const key=d.veiculoId+'|'+d.tipo; if(!ult[key]||ult[key].vencimento<d.vencimento) ult[key]=d; }
   for(const d of Object.values(ult)){ const v=G('veiculos',d.veiculoId); if(!v||statusVeiculo(v)==='vendido') continue; const dd=diff(h,d.vencimento); if(dd<=P.diasAvisoVenc) add(dd<0?'b':'w',`${lbl(DOC_T,d.tipo)} de ${(v.placa||'').toUpperCase()} ${dd<0?'vencido há '+(-dd)+' dias':'vence em '+dd+' dias'}`,`Vencimento ${dbr(d.vencimento)}`,{view:'veiculo',id:d.veiculoId,tab:'docs'}); }
-  for(const u of L('usos')){
+  if(!SO_F2) for(const u of L('usos')){
     const v=G('veiculos',u.veiculoId); const pl=v?(v.placa||'').toUpperCase():'?';
     if(u.status==='em_uso'){ const hrs=(new Date(now)-new Date(u.inicio))/36e5; if(hrs>P.horasCheckin) add('w',`Check-in aberto há ${Math.floor(hrs)} h em ${pl}`,`${nomeCondutor(u)} · desde ${dtbr(u.inicio)}`,{view:'veiculo',id:u.veiculoId,tab:'uso'}); }
     if(u.kmSemCondutor>0 && !u.gapResolvido) add('w',`${pl}: ${kmf(u.kmSemCondutor)} rodados sem condutor registrado`,`Detectado no check-in de ${dtbr(u.inicio)}`,{view:'veiculo',id:u.veiculoId,tab:'uso'});
   }
-  for(const c of L('chamados').filter(c=>!['resolvido','encerrado'].includes(c.status))) add(c.prioridade==='alta'||c.tipo==='emergencia'||c.tipo==='sinistro'?'b':'i',`Chamado #${c.numero} aberto · ${lbl(CH_TIPO,c.tipo)}`,`${(G('veiculos',c.veiculoId)||{}).placa||''} · ${lbl(CH_ST,c.status)}`,{view:'veiculo',id:c.veiculoId,tab:'chamados'});
-  for(const r of L('reembolsos').filter(r=>['solicitado','aguardando','aprovado'].includes(r.status))) add('i',`Reembolso ${r.status==='aprovado'?'aprovado, aguardando pagamento':'pendente de aprovação'}`,`${money(r.valor)} · ${r.motivo||''}`,{view:'veiculo',id:r.veiculoId,tab:'chamados'});
+  if(!SO_F2) for(const c of L('chamados').filter(c=>!['resolvido','encerrado'].includes(c.status))) add(c.prioridade==='alta'||c.tipo==='emergencia'||c.tipo==='sinistro'?'b':'i',`Chamado #${c.numero} aberto · ${lbl(CH_TIPO,c.tipo)}`,`${(G('veiculos',c.veiculoId)||{}).placa||''} · ${lbl(CH_ST,c.status)}`,{view:'veiculo',id:c.veiculoId,tab:'chamados'});
+  if(!SO_F2) for(const r of L('reembolsos').filter(r=>['solicitado','aguardando','aprovado'].includes(r.status))) add('i',`Reembolso ${r.status==='aprovado'?'aprovado, aguardando pagamento':'pendente de aprovação'}`,`${money(r.valor)} · ${r.motivo||''}`,{view:'veiculo',id:r.veiculoId,tab:'chamados'});
   for(const f of L('faturas').filter(f=>f.status==='aberta' && f.vencimento && f.vencimento<h)) add('b',`Fatura em atraso · ${mesbr(f.competencia)}`,`${money(f.total)} · venceu ${dbr(f.vencimento)}`,{view:'receber'});
   for(const m of L('multas').filter(m=>m.statusIndicacao!=='indicado' && m.prazoIndicacao)){ const dd=diff(h,m.prazoIndicacao); if(dd<=P.diasAvisoMulta) add(dd<0?'b':'w',`Prazo de indicação de condutor ${dd<0?'vencido':'em '+dd+' dias'}`,`Auto ${m.auto||'—'} · ${(G('veiculos',m.veiculoId)||{}).placa||''}`,{view:'veiculo',id:m.veiculoId,tab:'multas'}); }
   for(const m of L('manutencoes').filter(m=>m.arcaCom==='apuracao' && m.status!=='cancelada')) add('w',`Mau uso em apuração`,`${catLbl(m.categoria)} · ${(G('veiculos',m.veiculoId)||{}).placa||''} · decidir responsabilidade`,{view:'veiculo',id:m.veiculoId,tab:'manut'});
-  // preventiva do cliente vencida
+  // manutenção preventiva vencida
   for(const v of L('veiculos').filter(v=>statusVeiculo(v)!=='vendido')){
     for(const p of preventivas(v).filter(p=>p.st==='vencida')) add('w',`${p.nome} vencida em ${(v.placa||'').toUpperCase()}`,`${p.pk!=null?'Previsto '+kmf(p.pk)+' · atual '+kmf(kmAtual(v)):''}${p.pd?' · prazo '+dbr(p.pd):''} · sem comprovante novo`,{view:'veiculo',id:v.id,tab:'manut'});
   }
-  for(const x of L('vistorias').filter(x=>x.status==='enviada')){ const n=Object.keys(x.checklist||{}).length; add(n||x.avarias?'w':'i',`Vistoria do condutor ${n||x.avarias?'com avarias':'para revisar'}`,`${((G('veiculos',x.veiculoId)||{}).placa||'').toUpperCase()} · ${x.condutorNome||''} · ${dtbr(x.data)}`,{view:'veiculo',id:x.veiculoId,tab:'vist'}); }
-  for(const x of L('vistorias').filter(x=>x.status==='contestada')) add('w','Vistoria contestada pelo cliente',`${((G('veiculos',x.veiculoId)||{}).placa||'').toUpperCase()} · ${x.contestacao||''}`,{view:'veiculo',id:x.veiculoId,tab:'vist'});
-  for(const k of L('pacotes').filter(k=>k.status==='solicitado')){ const c=G('contratos',k.contratoId); add('i','Pedido de pacote de km',`${nf(k.km)} km por ${money(k.preco)} · ${c?nomeCliente(c.clienteId):''}`,c?{view:'cliente',id:c.clienteId,tab:'contratos'}:null); }
-  { const cv=L('contas').filter(contaVencida); if(cv.length) add('b',`${cv.length} conta(s) a pagar vencida(s)`,`${money(cv.reduce((s,c)=>s+(+c.valor||0),0))} · a mais antiga venceu em ${dbr(cv.map(c=>c.vencimento).sort()[0])}`,{view:cv.some(c=>c.classe==='fixa')?'fixas':'variaveis'});
-    const cs=L('contas').filter(c=>c.status==='aberta'&&!contaVencida(c)&&c.vencimento<=addDias(hoje(),5)); if(cs.length) add('w',`${cs.length} conta(s) vencem nos próximos 5 dias`,money(cs.reduce((s,c)=>s+(+c.valor||0),0)),{view:cs.some(c=>c.classe==='fixa')?'fixas':'variaveis'}); }
+  if(!SO_F2) for(const x of L('vistorias').filter(x=>x.status==='enviada')){ const n=Object.keys(x.checklist||{}).length; add(n||x.avarias?'w':'i',`Vistoria do condutor ${n||x.avarias?'com avarias':'para revisar'}`,`${((G('veiculos',x.veiculoId)||{}).placa||'').toUpperCase()} · ${x.condutorNome||''} · ${dtbr(x.data)}`,{view:'veiculo',id:x.veiculoId,tab:'vist'}); }
+  if(!SO_F2) for(const x of L('vistorias').filter(x=>x.status==='contestada')) add('w','Vistoria contestada pelo cliente',`${((G('veiculos',x.veiculoId)||{}).placa||'').toUpperCase()} · ${x.contestacao||''}`,{view:'veiculo',id:x.veiculoId,tab:'vist'});
+  if(!SO_F2) for(const k of L('pacotes').filter(k=>k.status==='solicitado')){ const c=G('contratos',k.contratoId); add('i','Pedido de pacote de km',`${nf(k.km)} km por ${money(k.preco)} · ${c?nomeCliente(c.clienteId):''}`,c?{view:'cliente',id:c.clienteId,tab:'contratos'}:null); }
+  { const cv=L('contas').filter(contaVencida); if(cv.length) add('b',`${cv.length} conta(s) a pagar vencida(s)`,`${money(cv.reduce((s,c)=>s+(+c.valor||0),0))} · a mais antiga venceu em ${dbr(cv.map(c=>c.vencimento).sort()[0])}`,{view:'contas'});
+    const cs=L('contas').filter(c=>c.status==='aberta'&&!contaVencida(c)&&c.vencimento<=addDias(hoje(),5)); if(cs.length) add('w',`${cs.length} conta(s) vencem nos próximos 5 dias`,money(cs.reduce((s,c)=>s+(+c.valor||0),0)),{view:'contas'}); }
   if(S.me && S.me.perfil==='admin'){ const n=(S.perfis||[]).filter(p=>p.perfil==='pendente'||!p.ativo).length; if(n) add('i',`${n} usuário(s) aguardando liberação`,'Defina perfil e ative em Configurações → Usuários',{view:'config',tab:'usuarios'}); }
   const o={b:0,w:1,i:2}; return A.sort((a,b)=>o[a.sev]-o[b.sev]);
 }
@@ -606,9 +610,13 @@ const SCHEMA = {
     {k:'status',l:'Situação',t:'sel',opts:opt([['agendada','Agendada'],['em_execucao','Em execução'],['concluida','Concluída'],['cancelada','Cancelada']]),def:'concluida'},
     {k:'entradaOficina',l:'Entrada na oficina',t:'date',hint:'Com saída vazia, o veículo fica "em manutenção".'},{k:'liberacao',l:'Liberação do veículo',t:'date'},
     {k:'proximaData',l:'Próxima por data',t:'date'},{k:'proximaKm',l:'Próxima por km',t:'num'},
-    {k:'classe',l:'Tipo de custo para a F2',t:'sel',opts:opt(CLASSE),req:1,show:v=>['f2','mau_uso_fatura'].includes(v.arcaCom) && +v.valor>0 && v.status==='concluida',hint:'A manutenção paga pela F2 vira uma conta no centro de custo do carro.'},
+    {k:'classe',l:'Tipo de custo para a F2',t:'sel',opts:opt(CLASSE),req:1,def:'variavel',show:v=>['f2','mau_uso_fatura'].includes(v.arcaCom) && +v.valor>0 && v.status==='concluida',hint:'A manutenção paga pela F2 vira uma conta no centro de custo do carro.'},
     {k:'descricao',l:'Descrição do serviço',t:'area',full:1},{k:'nf',l:'Nota fiscal / recibo',t:'file',accept:'image/*,application/pdf',full:1}],
     async save(v,id){
+      const ant=id?G('manutencoes',id):null; const contaId=v.contaId||(ant&&ant.contaId);
+      if(contaId && G('contas',contaId)){ const nid=await salvar('manutencoes',id,v); const k=G('contas',contaId);
+        await SCHEMA.contas.save({...k,valor:+v.valor||0,fornecedor:v.oficina||k.fornecedor||'',manutCat:v.status==='cancelada'?'':v.categoria,manutData:v.data,manutKm:v.km||null,descricao:v.descricao||k.descricao,status:v.status==='cancelada'?'cancelada':k.status},contaId,k);
+        return nid; }
       const nid=await salvar('manutencoes',id,v);
       const custoF2 = ['f2','mau_uso_fatura'].includes(v.arcaCom) && v.status!=='cancelada' && +v.valor>0 && v.status==='concluida';
       await syncConta('manutencoes',nid, custoF2? {descricao:'Manutenção: '+(v.descricao||catLbl(v.categoria)).slice(0,120),centro:v.veiculoId,classe:v.classe||'variavel',categoria:'Manutenção · '+catLbl(v.categoria),fornecedor:v.oficina||'',valor:+v.valor,vencimento:v.data,competencia:v.data.slice(0,7),status:'paga',pagoEm:v.data,boleto:v.nf||null} : null);
@@ -886,14 +894,15 @@ function propostaFatura(c, comp){
 }
 function openGerarFatura(contratoId){
   const dlg=$('#dlg'); const cs=L('contratos').filter(c=>c.status!=='encerrado');
-  const comp0 = mesAtual();
+  const comp0 = mesAtual(); let kmDig='';
   const draw=(cid,comp,extras)=>{
     const c=G('contratos',cid); const pr=c?propostaFatura(c,comp):null; extras=extras||[];
     const itens = pr? pr.itens.concat(extras) : []; const total=r2(itens.reduce((s,i)=>s+(+i.valor||0),0));
     const existe = c && L('faturas').find(f=>f.contratoId===cid && f.competencia===comp && f.status!=='cancelada');
     dlg.innerHTML=`<form id="frm"><div class="dh"><h2>Gerar fatura</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc"><div class="fgrid">
       <div class="fld"><label for="gf_c">Contrato</label><select id="gf_c"><option value="">Selecione…</option>${cs.map(x=>`<option value="${esc(x.id)}"${x.id===cid?' selected':''}>${esc(refLabel('contratos',x))}</option>`).join('')}</select></div>
-      <div class="fld"><label for="gf_m">Competência</label><input id="gf_m" type="month" value="${esc(comp)}"></div></div>
+      <div class="fld"><label for="gf_m">Competência</label><input id="gf_m" type="month" value="${esc(comp)}"></div>
+      ${c?(()=>{ const vv=G('veiculos',c.veiculoId)||{}; const ka=kmAtual(vv); return `<div class="fld full"><label for="gf_km">Km atual do ${esc((vv.placa||'carro').toUpperCase())}</label><input id="gf_km" type="text" inputmode="numeric" autocomplete="off" placeholder="Ex.: ${esc(nf((ka||0)+2000))}" value="${esc(kmDig)}"><span class="hint">Último registrado: ${ka?kmf(ka):'—'}. Atualiza o km do carro e os avisos de manutenção. Pode deixar vazio.</span></div>`; })():''}</div>
       ${pr?`<div style="margin-top:14px" class="stack">${pr.avisos.map(a=>`<div class="note${pr.bloqueado&&a.startsWith('Excedente')?' b':''}">${esc(a)}</div>`).join('')}${existe?`<div class="note b">Já existe fatura ${esc(existe.status)} para este contrato e competência.</div>`:''}
       <div class="tw"><table><thead><tr><th>Item</th><th>Natureza</th><th class="num">Valor</th></tr></thead><tbody>${itens.map(i=>`<tr><td>${esc(i.desc)}</td><td>${i.natureza==='repasse'?'<span class="tag">Repasse</span>':'Receita'}</td><td class="num">${money(i.valor)}</td></tr>`).join('')}<tr><td colspan="2"><b>Total</b></td><td class="num"><b>${money(total)}</b></td></tr></tbody></table></div>
       <div class="fgrid"><div class="fld"><label for="gf_ad">Ajuste manual (R$)</label><input id="gf_ad" type="number" step="0.01" placeholder="Ex.: -150"></div><div class="fld"><label for="gf_aj">Justificativa do ajuste</label><input id="gf_aj"></div>
@@ -901,11 +910,16 @@ function openGerarFatura(contratoId){
       <p class="hint" id="ferr" hidden style="color:var(--danger)"></p></div>
       <div class="df"><button type="button" class="btn" data-close>Cancelar</button><button type="submit" class="btn pri" id="fsub"${!pr||existe?' disabled':''}>Emitir fatura</button></div></form>`;
     const f=$('#frm'); f.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dlg.close());
-    f.querySelector('#gf_c').onchange=e=>draw(e.target.value,f.querySelector('#gf_m').value,[]);
+    const kmI=f.querySelector('#gf_km'); if(kmI) kmI.oninput=e=>{ kmDig=e.target.value; };
+    f.querySelector('#gf_c').onchange=e=>{ kmDig=''; draw(e.target.value,f.querySelector('#gf_m').value,[]); };
     f.querySelector('#gf_m').onchange=e=>draw(f.querySelector('#gf_c').value,e.target.value||comp0,[]);
     const add=f.querySelector('#gf_add'); if(add) add.onclick=()=>{ const val=+f.querySelector('#gf_ad').value, j=f.querySelector('#gf_aj').value.trim(); if(!val||!j){ const er=$('#ferr'); er.textContent='Informe valor e justificativa do ajuste.'; er.hidden=false; return;} draw(cid,comp,extras.concat([{tipo:'ajuste',natureza:'receita',desc:'Ajuste manual: '+j,valor:val}])); };
     f.onsubmit=async e=>{ e.preventDefault(); if(!pr||existe) return; $('#fsub').disabled=true;
-      try{ const n=L('faturas').filter(x=>x.contratoId===cid && x.competencia===comp).length; const fid=cid+'_'+comp+(n?'_'+(n+1):'');
+      const kmN=lerNumBR(kmDig); const vv=G('veiculos',c.veiculoId)||{};
+      if(kmN!==null && (isNaN(kmN)||kmN<=0)){ const er=$('#ferr'); er.textContent='Km inválido.'; er.hidden=false; $('#fsub').disabled=false; return; }
+      if(kmN && kmN<kmAtual(vv)){ const er=$('#ferr'); er.textContent=`O km informado (${kmf(kmN)}) é menor que o último registrado (${kmf(kmAtual(vv))}). Confira o número.`; er.hidden=false; $('#fsub').disabled=false; return; }
+      try{ if(kmN && kmN!==kmAtual(vv)){ await salvar('leituras',null,{veiculoId:c.veiculoId,km:kmN,data:agora(),origem:'fatura',status:'verificada'},'registrou km na fatura');
+          if(+c.kmContratado>0){ kmDig=''; draw(cid,comp,extras); toast('Km atualizado. Confira o excedente e emita a fatura.'); return; } } const n=L('faturas').filter(x=>x.contratoId===cid && x.competencia===comp).length; const fid=cid+'_'+comp+(n?'_'+(n+1):'');
         const venc=f.querySelector('#gf_v').value||pr.vencimento;
         await S.db.collection('faturas').doc(fid).set(limpa({contratoId:cid,clienteId:c.clienteId,veiculoId:c.veiculoId,competencia:comp,itens,total,vencimento:venc,status:'aberta',excedenteBloqueado:pr.bloqueado,
           condicoes:{aluguel:c.aluguel,kmContratado:c.kmContratado,valorKmExcedente:c.valorKmExcedente,periodicidade:c.periodicidade,reajIndice:c.reajIndice},criadoEm:new Date().toISOString(),criadoPor:S.uid}));
@@ -943,14 +957,14 @@ const vCell = id => { const v=G('veiculos',id); return v? placaHTML(v) : '—'; 
 /* ===================== views ===================== */
 const NAV = [
   ['grp','Operação'],['painel','Painel'],['clientes','Clientes'],['veiculos','Veículos'],['contratos','Contratos'],
-  ['grp','Financeiro'],['receber','Faturas'],['fixas','Contas fixas'],['variaveis','Contas variáveis'],['resultado','Resultado'],
+  ['grp','Financeiro'],['receber','Faturas'],['contas','Contas a pagar'],['resultado','Resultado'],
   ['grp','Sistema'],['config','Configurações'],['melhorias','Melhorias'],['auditoria','Auditoria']];
-const PERM={admin:'*',operacional:['painel','clientes','cliente','veiculos','veiculo','contratos','melhorias'],financeiro:['painel','clientes','cliente','veiculos','veiculo','contratos','receber','fixas','variaveis','resultado','melhorias']};
+const PERM={admin:'*',operacional:['painel','clientes','cliente','veiculos','veiculo','contratos','melhorias'],financeiro:['painel','clientes','cliente','veiculos','veiculo','contratos','receber','contas','fixas','variaveis','resultado','melhorias']};
 const pode = v => !!S.me && (PERM[S.me.perfil]==='*' || (PERM[S.me.perfil]||[]).includes(v));
 function renderNav(al){
-  const cur = S.route.view==='veiculo'?'veiculos':S.route.view==='cliente'?'clientes':S.route.view;
+  const cur = S.route.view==='veiculo'?'veiculos':S.route.view==='cliente'?'clientes':['fixas','variaveis'].includes(S.route.view)?'contas':(['melhorias','auditoria'].includes(S.route.view)&&pode('config'))?'config':S.route.view;
   const itens=[]; let grp=null;
-  for(const [k,l] of NAV){ if(k==='grp'){ grp=l; continue; } if(!pode(k)) continue; if(grp){ itens.push(`<div class="grp">${grp}</div>`); grp=null; } itens.push(`<button data-go="${k}"${cur===k?' aria-current="page"':''}><span>${l}</span>${k==='painel'&&al.length?`<span class="cnt">${al.length}</span>`:''}</button>`); }
+  for(const [k,l] of NAV){ if(k==='grp'){ grp=l; continue; } if(!pode(k)) continue; if(['melhorias','auditoria'].includes(k) && pode('config')) continue; if(grp){ itens.push(`<div class="grp">${grp}</div>`); grp=null; } itens.push(`<button data-go="${k}"${cur===k?' aria-current="page"':''}><span>${l}</span>${k==='painel'&&al.length?`<span class="cnt">${al.length}</span>`:''}</button>`); }
   $('#nav').innerHTML=itens.join('');
   $('#sideFoot').innerHTML=`<div><b>${esc(S.me.nome)}</b><br><small class="muted">${esc(lbl(PERFIS,S.me.perfil))}</small></div><span class="sync"></span><button class="btn sm" data-act="sair">Sair</button>`;
   setSync(Supa.estado||'ok');
@@ -1009,19 +1023,19 @@ function vConfig(){
   const pendentes=(S.perfis||[]).filter(p=>p.perfil==='pendente'||!p.ativo).length;
   const campo=(id,label,val,hint,tipo)=>`<div class="fld"><label for="${id}">${label}</label><input id="${id}" ${tipo==='txt'?'':'type="number" step="any"'} value="${esc(val??'')}">${hint?`<span class="hint">${hint}</span>`:''}</div>`;
   return head('Configurações','Usuários, avisos, manutenção preventiva e backup.')+
-  `<div class="tabs" role="tablist">${CFG_TABS.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-cfgtab="${k}">${l}${k==='usuarios'&&pendentes?` <span class="pill p-warn">${pendentes}</span>`:''}</button>`).join('')}</div>
+  `<div class="tabs" role="tablist">${CFG_TABS.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-cfgtab="${k}">${l}${k==='usuarios'&&pendentes?` <span class="pill p-warn">${pendentes}</span>`:''}</button>`).join('')}<button data-go="melhorias">Melhorias ›</button><button data-go="auditoria">Histórico de alterações ›</button></div>
   <div class="stack"><div${vis('usuarios')}>${secUsuarios()}</div>
   <form class="card" id="cfgf"${['alertas','manut','quem'].includes(t)?'':' hidden'}>
     <div${vis('alertas')}><h3>Avisos e prazos</h3><p class="muted" style="margin:0 0 12px">Quando o sistema mostra uma pendência no Painel.</p><div class="fgrid">
       ${campo('c_al','Avisar quando a franquia de km chegar a (%)',P.alertasKm.join(', '),'Separe por vírgula. Ex.: 70, 85, 100','txt')}
       ${campo('c_dv','Avisar vencimento de documentos e contratos (dias antes)',P.diasAvisoVenc)}
       ${campo('c_dm','Avisar prazo para indicar condutor de multa (dias antes)',P.diasAvisoMulta)}
-      ${campo('c_hc','Avisar check-in aberto há mais de (horas)',P.horasCheckin,'O motorista esqueceu de fazer o checkout.')}
-      ${campo('c_le','Limite de despesa de emergência sem autorização (R$)',P.limiteEmergencia,'Valor padrão dos contratos novos.')}
+      <div${SO_F2?' hidden':''} style="display:contents">${campo('c_hc','Avisar check-in aberto há mais de (horas)',P.horasCheckin,'O motorista esqueceu de fazer o checkout.')}
+      ${campo('c_le','Limite de despesa de emergência sem autorização (R$)',P.limiteEmergencia,'Valor padrão dos contratos novos.')}</div>
       ${campo('c_cr','Dias parados antes de dar desconto no aluguel',P.carenciaPadrao,'Valor padrão dos contratos novos (carro na oficina por culpa da F2).')}
       ${campo('c_dp','Previsão de km: usar a média dos últimos (dias)',P.diasProjecao,'Usado para prever se o cliente vai estourar a franquia.')}</div></div>
-    <div${vis('manut')}><h3>Manutenção preventiva padrão</h3><p class="muted" style="margin:0 0 12px">Vale para todos os carros, a não ser que o cadastro do carro tenha outro valor. Deixe 0 para não controlar.</p><div class="fgrid">
-      ${[['pvRevKm','Revisão a cada (km)'],['pvRevMeses','Revisão a cada (meses)'],['pvOleoKm','Troca de óleo a cada (km)'],['pvOleoMeses','Troca de óleo a cada (meses)'],['pvAlinKm','Alinhamento a cada (km)'],['pvAlinMeses','Alinhamento a cada (meses)']].map(([k,l])=>campo('pv_'+k,l,(P.prev||{})[k])).join('')}
+    <div${vis('manut')}><h3>Manutenção preventiva padrão</h3><p class="muted" style="margin:0 0 12px">Vale para todos os carros. Deixe 0 para não controlar. Os valores iniciais são os usuais para carros populares; ajuste quando a oficina indicar outro prazo.</p><div class="fgrid">
+      ${PV_CAMPOS.map(([k,l])=>campo('pv_'+k,l,(P.prev||{})[k])).join('')}
       ${campo('c_pak','Avisar quando faltar (km)',P.prevAvisoKm)}${campo('c_pad','Avisar quando faltar (dias)',P.prevAvisoDias)}</div></div>
     <div${vis('quem')}><h3>Quem paga cada tipo de manutenção</h3><p class="muted" style="margin:0 0 12px">É a sugestão que aparece ao lançar uma manutenção. Pode ser trocada em cada lançamento.</p><div class="fgrid">${CATS.map(c=>`<div class="fld"><label for="mz_${c[0]}">${esc(c[1])}</label><select id="mz_${c[0]}">${ARCA.slice(0,3).map(a=>`<option value="${a[0]}"${arcaPadrao(c[0])===a[0]?' selected':''}>${esc(a[1])}</option>`).join('')}</select></div>`).join('')}</div></div>
     <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn pri" type="submit">Salvar</button></div></form>
@@ -1042,7 +1056,7 @@ function secUsuarios(){
   if(!S.me || S.me.perfil!=='admin') return '';
   const ps=(S.perfis||[]).slice().sort((a,b)=>(a.perfil==='pendente'?0:1)-(b.perfil==='pendente'?0:1)||String(a.nome).localeCompare(String(b.nome)));
   return `<section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Usuários</h3>${B('Atualizar lista','recarregarPerfis','','')}</div>
-  <p class="muted" style="margin:0 0 10px">Equipe da F2 cria a conta em <b>/f2</b>, o administrativo do cliente em <b>/cliente</b> e o motorista em <b>/motorista</b> (ou pelo QR code do carro). A conta aparece aqui como pendente: escolha o perfil, o cliente (para gestor e motorista) e ative. Motoristas também podem ser liberados pelo gestor do cliente, na Área do cliente.</p>
+  <p class="muted" style="margin:0 0 10px">${SO_F2?'Quem é da equipe da F2 cria a conta em <b>/f2</b>. Ela aparece aqui como pendente: escolha o perfil e ative.<span hidden>':''}Equipe da F2 cria a conta em <b>/f2</b>, o administrativo do cliente em <b>/cliente</b> e o motorista em <b>/motorista</b> (ou pelo QR code do carro). A conta aparece aqui como pendente: escolha o perfil, o cliente (para gestor e motorista) e ative. Motoristas também podem ser liberados pelo gestor do cliente, na Área do cliente.</p>
   ${tabela([{h:'Nome',f:p=>`<b>${esc(p.nome||'—')}</b>`},{h:'E-mail',f:p=>esc(p.email||'')},{h:'Perfil',f:p=>`<span class="pill ${p.perfil==='pendente'?'p-warn':'p-info'}">${esc(lbl(PERFIS,p.perfil))}</span>`},{h:'Cliente',f:p=>esc(p.cliente_id?nomeCliente(p.cliente_id):'—')},{h:'Ativo',f:p=>p.ativo?'Sim':'<span class="pill p-bad">Não</span>'},{h:'Último acesso',f:p=>dtbr(locISO(p.ultimo_acesso))}],ps,'Nenhum usuário.',p=>`data-act="perfil" data-id="${p.id}"`)}</section>`;
 }
 function openPerfil(id){
@@ -1077,7 +1091,7 @@ function secDados(){
 function vVeiculo(id){
   const v=G('veiculos',id); if(!v) return head('Veículo não encontrado');
   const t=S.ui.vtab; const c=contratoDoVeiculo(id); const u=usoAberto(id); const cs=L('contratos').filter(x=>x.veiculoId===id).sort((a,b)=>a.inicio<b.inicio?1:-1);
-  const TABS=[['resumo','Resumo'],...(pode('resultado')?[['rende','Rendimento']]:[]),['contrato','Contrato'],['uso','Uso e check-in'],['km','Quilometragem'],['abast','Abastecimento'],['vist','Vistorias'],['manut','Manutenções'],['chamados','Chamados e reembolsos'],['docs','Documentos e seguros'],['multas','Multas'],['fin','Financeiro'],['historico','Histórico']];
+  const TABS=[['resumo','Resumo'],...(pode('resultado')?[['rende','Rendimento']]:[]),['contrato','Contrato'],['manut','Manutenção'],['km','Quilometragem'],['docs','Documentos e seguros'],['multas','Multas'],['vist','Vistorias'],['fin','Financeiro'],['historico','Histórico'],...(SO_F2?[]:[['uso','Uso e check-in'],['abast','Abastecimento'],['chamados','Chamados e reembolsos']])];
   let body='';
   if(t==='rende' && pode('resultado')) body=rendeHTML(id);
   else if(t==='resumo'){
@@ -1085,7 +1099,8 @@ function vVeiculo(id){
     const rd=pode('resultado')?rendimentoVeiculo(id):null;
     body=`<div class="stack">${rd?`<div class="kpis">${kpi('Faturamento mensal',money(rd.aluguel),rd.c?'aluguel do contrato':'sem contrato')}${kpi('Despesas fixas por mês',money(rd.totFixas),rd.fixas.length+' despesa(s)')}${kpi('Rende por mês',`<em class="${rd.rende<0?'neg':''}">${money(rd.rende)}</em>`,`<button class="btn ghost sm" data-vtab="rende">ver detalhe</button>`)}</div>`:''}<div class="card"><dl class="info"><div><dt>Situação</dt><dd>${statusPill(v)}</dd></div><div><dt>Km atual</dt><dd>${kmf(kmAtual(v))}</dd></div><div><dt>Cliente</dt><dd>${c?`<button class="btn ghost sm" data-go="cliente" data-id="${c.clienteId}">${esc(nomeCliente(c.clienteId))}</button>`:'—'}</dd></div><div><dt>Contrato até</dt><dd>${c?dbr(c.fim):'—'}</dd></div><div><dt>Com quem está</dt><dd>${u?esc(nomeCondutor(u))+' desde '+dtbr(u.inicio):'Ninguém'}</dd></div>
       <div><dt>Ano</dt><dd>${esc(v.anoFab||'—')}/${esc(v.anoModelo||'—')}</dd></div><div><dt>Cor · combustível · câmbio</dt><dd>${esc([v.cor,v.combustivel,v.cambio].filter(Boolean).join(' · ')||'—')}</dd></div><div><dt>Renavam</dt><dd class="mono">${esc(v.renavam||'—')}</dd></div><div><dt>Chassi</dt><dd class="mono">${esc(v.chassi||'—')}</dd></div></dl></div>
-      ${c?`<div class="card"><h3>Franquia de km</h3>${kmBarHTML(c)}</div>`:''}
+      ${c&&+c.kmContratado?`<div class="card"><h3>Franquia de km</h3>${kmBarHTML(c)}</div>`:''}
+      ${statusVeiculo(v)!=='vendido'?prevHTML(v,false):''}
       ${al.length?`<section class="card" style="padding:0"><div style="padding:14px 14px 6px"><h3>Alertas deste veículo</h3></div><div class="alerts">${al.map(a=>`<div class="alert"><span class="sev ${a.sev}"></span><div><b>${esc(a.titulo)}</b><small>${esc(a.detalhe)}</small></div><span></span></div>`).join('')}</div></section>`:''}
       <div class="card"><h3>Aquisição${v.aqForma==='consorcio'?' e consórcio':''}</h3><dl class="info"><div><dt>Compra</dt><dd>${dbr(v.aqData)} · ${money(v.aqPreco)}</dd></div><div><dt>Forma</dt><dd>${esc({consorcio:'Consórcio',avista:'À vista',financiamento:'Financiamento'}[v.aqForma]||'—')}</dd></div><div><dt>Vendedor</dt><dd>${esc(v.aqVendedor||'—')}</dd></div><div><dt>Transferência e preparação</dt><dd>${money(v.aqCustos)}</dd></div>
       ${v.aqForma==='consorcio'?`<div><dt>Administradora / cota</dt><dd>${esc(v.csAdm||'—')} · ${esc(v.csCota||'—')}</dd></div><div><dt>Carta</dt><dd>${money(v.csCarta)}</dd></div><div><dt>Parcelas</dt><dd>${esc(v.csPagas??'—')} de ${esc(v.csParcelas??'—')} · ${money(v.csParcela)}</dd></div><div><dt>Saldo devedor</dt><dd>${money(v.csSaldo)}${v.csAlienado?' · alienado':''}</dd></div>`:''}
@@ -1123,7 +1138,7 @@ function vVeiculo(id){
       ${tabela([{h:'Data',f:l=>dtbr(l.data)},{h:'Km',n:1,f:l=>kmf(l.km)},{h:'Origem',f:l=>esc(l.origem)},{h:'Status',f:l=>l.suspeita?'<span class="pill p-bad">Suspeita</span>':`<span class="pill ${l.status==='verificada'?'p-ok':''}">${esc(l.status)}</span>`},{h:'Foto',f:l=>arq(l.foto)},{h:'',f:l=>l.status!=='verificada'&&!l.suspeita?`<button class="btn sm" data-act="verificar" data-id="${l.id}">Verificar</button>`:l.suspeita?`<button class="btn sm" data-act="liberarSusp" data-id="${l.id}">Não é suspeita</button>`:''}],ls,'Nenhuma leitura.')}</div>`;
   } else if(t==='docs'){ body=`<div class="stack"><div>${B('Novo documento ou seguro','new','data-k="documentos" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}</div>${tabelaDocs(L('documentos').filter(d=>d.veiculoId===id))}</div>`; }
   else if(t==='abast'){ const as=L('abastecimentos').filter(a=>a.veiculoId===id).sort((a,b)=>a.data<b.data?1:-1); const mm=consumoComb(id).media; body=`<div class="stack"><div class="row">${B('Novo abastecimento','new','data-k="abastecimentos" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}<span class="muted">Consumo médio: <b>${mm?nf(mm,1)+' km/l':'—'}</b></span></div>${tabelaAbast(as,false)}</div>`; }
-  else if(t==='manut'){ body=`<div class="stack">${prevHTML(v,false)}<div>${B('Nova manutenção','new','data-k="manutencoes" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}</div>${tabelaManut(L('manutencoes').filter(m=>m.veiculoId===id).sort((a,b)=>a.data<b.data?1:-1))}</div>`; }
+  else if(t==='manut'){ body=`<div class="stack">${prevHTML(v,false)}<h3 style="margin:8px 0 0">Histórico de manutenções</h3><div>${B('Nova manutenção','new','data-k="manutencoes" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}</div>${tabelaManut(L('manutencoes').filter(m=>m.veiculoId===id).sort((a,b)=>a.data<b.data?1:-1))}</div>`; }
   else if(t==='chamados'){ const rs=L('reembolsos').filter(r=>r.veiculoId===id).sort((a,b)=>(a.criadoEm||'')<(b.criadoEm||'')?1:-1);
     body=`<div class="stack"><div class="row">${B('Novo chamado','new','data-k="chamados" data-preset=\'{"veiculoId":"'+id+'"}\'',1)}${B('Novo reembolso','new','data-k="reembolsos" data-preset=\'{"veiculoId":"'+id+'"}\'')}</div><section><h3>Chamados</h3>${tabelaChamados(L('chamados').filter(m=>m.veiculoId===id).sort((a,b)=>(a.criadoEm||'')<(b.criadoEm||'')?1:-1))}</section>
     <section><h3>Reembolsos</h3>${tabela([{h:'Data',f:r=>dbr(locISO(r.criadoEm))},{h:'Motivo',f:r=>esc(r.motivo)+(r.emergencia?' <span class="tag">Emergência</span>':'')},{h:'Valor',n:1,f:r=>`${money(r.valor)}${r.emergencia&&+r.valor>cfg().limiteEmergencia?'<br><small style="color:var(--danger)">acima do limite</small>':''}`},{h:'Comprovante',f:r=>arq(r.comprovante)},{h:'Situação',f:r=>`<span class="pill ${r.status==='pago'?'p-ok':r.status==='recusado'?'p-bad':r.status==='aprovado'?'p-info':'p-warn'}">${esc(lbl(RB_ST,r.status))}</span>`},{h:'Pago em',f:r=>dbr(r.dataPagamento)}],rs,'Nenhum reembolso.',r=>`data-act="edit" data-k="reembolsos" data-id="${r.id}"`)}</section></div>`; }
@@ -1138,7 +1153,7 @@ function vVeiculo(id){
       <section><h3>Lançamentos</h3>${tabelaLanc(L('lancamentos').filter(l=>l.veiculoId===id).sort((a,b)=>a.competencia<b.competencia?1:-1))}</section></div>`; }
   return `<p class="muted" style="margin:0 0 6px"><button class="btn ghost sm" data-go="veiculos">‹ Veículos</button></p>`+
     head(`<span class="row" style="gap:14px">${placaHTML(v,1)}<span>${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao||'')}${isEx(v)}</span></span>`,`${statusPill(v)} &nbsp;${kmf(kmAtual(v))}${c?' · '+esc(nomeCliente(c.clienteId)):''}`,
-      `${B('QR code','qr','data-id="'+id+'"')}${B('Editar','edit','data-k="veiculos" data-id="'+id+'"')}${statusVeiculo(v)!=='vendido'?B('Registrar venda','venda','data-id="'+id+'"'):''}${u?B('Checkout','checkout','data-id="'+id+'"',1):B('Check-in','checkin','data-id="'+id+'"',1)}`)+
+      `${SO_F2?'':B('QR code','qr','data-id="'+id+'"')}${B('Editar','edit','data-k="veiculos" data-id="'+id+'"')}${statusVeiculo(v)!=='vendido'?B('Registrar venda','venda','data-id="'+id+'"'):''}${SO_F2?B('Lançar conta do carro','new','data-k="contas" data-preset=\'{"centro":"'+id+'"}\'',1):u?B('Checkout','checkout','data-id="'+id+'"',1):B('Check-in','checkin','data-id="'+id+'"',1)}`)+
     `<div class="tabs" role="tablist">${TABS.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-vtab="${k}">${l}</button>`).join('')}</div>`+body;
 }
 function kmChart(ls){
@@ -1186,7 +1201,10 @@ SCHEMA.contas={col:'contas',titulo:'Conta a pagar',fields:[
   {k:'divide',l:'Dividir com outro carro (ex.: consórcio com 2 carros)',t:'bool',full:1,show:v=>v.centro&&v.centro!==CENTRO_ADM},
   {k:'centro2',l:'Outro carro',t:'sel',optsFn:()=>centroOpts().filter(o=>o.v!==CENTRO_ADM),full:1,show:v=>v.divide&&v.centro&&v.centro!==CENTRO_ADM},
   {k:'pct1',l:'% que fica no primeiro carro',t:'num',def:50,show:v=>v.divide&&v.centro&&v.centro!==CENTRO_ADM,hint:'O resto vai para o outro carro. Ex.: 50 = metade para cada.'},
-  {k:'classe',l:'Tipo de custo',t:'sel',opts:opt(CLASSE),req:1},{k:'categoria',l:'Categoria',lista:'cat_contas',hint:'Ex.: Seguro, Rastreador, Manutenção, Contador'},
+  {k:'classe',l:'Tipo de custo',t:'sel',opts:opt([['fixa','Fixo (se repete)'],['variavel','Variável (avulso)']]),req:1,def:'variavel'},{k:'categoria',l:'Categoria',lista:'cat_contas',hint:'Ex.: Seguro, Rastreador, Manutenção, Contador'},
+  {k:'manutCat',l:'É manutenção do carro?',t:'sel',opts:[{v:'',l:'Não'}].concat(MANUT_CONTA.map(k=>({v:k,l:MANUT_LBL[k]}))),full:1,show:v=>v.centro&&v.centro!==CENTRO_ADM&&!v.divide,hint:'Se for, a troca entra no histórico do carro (últimas trocas e avisos de manutenção).'},
+  {k:'manutData',l:'Data do serviço',t:'date',show:v=>!!v.manutCat&&v.centro&&v.centro!==CENTRO_ADM&&!v.divide,hint:'Vazio = data do vencimento.'},
+  {k:'manutKm',l:'Km do carro no serviço',t:'num',show:v=>!!v.manutCat&&v.centro&&v.centro!==CENTRO_ADM&&!v.divide,hint:'Atualiza o km do carro e calcula a próxima troca.'},
   {k:'fornecedor',l:'Fornecedor'},{k:'valor',l:'Valor (R$)',t:'money',req:1},
   {k:'vencimento',l:'Vencimento',t:'date',req:1,defFn:hoje},{k:'competencia',l:'Mês de competência',t:'month',hint:'Vazio = mês do vencimento.'},
   {k:'status',l:'Situação',t:'sel',opts:opt([['aberta','A pagar'],['paga','Paga'],['cancelada','Cancelada']]),def:'aberta',req:1},
@@ -1198,10 +1216,24 @@ SCHEMA.contas={col:'contas',titulo:'Conta a pagar',fields:[
     aplicarRateio(v);
     if(v.status==='paga' && !v.pagoEm) v.pagoEm=hoje();
     if(v.status!=='paga'){ v.pagoEm=null; }
+    if(v.divide || !v.centro || v.centro===CENTRO_ADM) v.manutCat='';
     const nid=await salvar('contas',id,v,antes?(antes.status!==v.status&&v.status==='paga'?'pagou conta':'editou conta'):'lançou conta');
     const c={...(antes||{}),...v};
+    if(!c.origemCol) await vincularManut(c,nid);
     await syncLanc('contas',nid, c.status==='paga'&&+c.valor ? partesConta(c).map(p=>({veiculoId:p.centro&&p.centro!==CENTRO_ADM?p.centro:null,tipo:'custo',classe:c.classe,categoria:c.categoria||(c.classe==='fixa'?'Conta fixa':'Conta variável'),descricao:c.descricao+(c.rateio?` (${p.pct}%)`:''),valor:p.valor,competencia:c.competencia+'-01',dataCaixa:c.pagoEm})) : []);
     return nid; }};
+/* Conta de manutenção de um carro: cria/atualiza o registro de manutenção (histórico, últimas trocas e avisos). */
+async function vincularManut(c,nid){
+  const mid=c.manutId||null; const ex=mid?G('manutencoes',mid):null;
+  if(c.manutCat && c.status!=='cancelada'){
+    const data=c.manutData||c.vencimento||hoje();
+    const d={veiculoId:c.centro,categoria:c.manutCat,arcaCom:'f2',data,km:+c.manutKm||null,oficina:c.fornecedor||'',valor:+c.valor||0,status:'concluida',classe:c.classe||'variavel',descricao:c.descricao||'',contaId:nid};
+    const igual=ex && ['veiculoId','categoria','data','km','oficina','valor','status','descricao'].every(k=>String(ex[k]??'')===String(d[k]??''));
+    let m=mid; if(!igual) m=await salvar('manutencoes',mid,d,mid?'atualizou manutenção pela conta':'registrou manutenção pela conta');
+    if(!mid) await salvar('contas',nid,{manutId:m},'vinculou manutenção');
+    if(+c.manutKm>0 && !L('leituras').some(l=>l.veiculoId===c.centro && +l.km===+c.manutKm && (l.data||'').slice(0,10)===data)) await salvar('leituras',null,{veiculoId:c.centro,km:+c.manutKm,data:data+'T12:00',origem:'manutencao',status:'verificada'},'registrou km');
+  } else if(mid && ex && ex.status!=='cancelada'){ await salvar('manutencoes',mid,{status:'cancelada'},'cancelou manutenção pela conta'); }
+}
 SCHEMA.recorrencias={col:'recorrencias',titulo:'Conta fixa recorrente',fields:[
   {k:'descricao',l:'Descrição',req:1,full:1,hint:'Ex.: Rastreador, Parcela do consórcio, Contador'},
   {k:'centro',l:'Centro de custo',t:'sel',optsFn:centroOpts,req:1,full:1,hint:'A placa do carro, ou Administrativo para custos gerais da empresa.'},
@@ -1247,15 +1279,15 @@ function tabelaContas(cs, comCentro){
 function filtroCentroHTML(){ const f=S.ui.centro||''; return `<label class="row muted" for="fc_c">Centro de custo <select id="fc_c" class="btn" style="font-weight:500"><option value="">Todos</option>${centroOpts().map(o=>`<option value="${esc(o.v)}"${o.v===f?' selected':''}>${esc(o.v===CENTRO_ADM?'Administrativo':o.l)}</option>`).join('')}</select></label>`; }
 const passaCentro = c => !S.ui.centro || partesConta(c).some(p=>p.centro===S.ui.centro);
 function vContas(classe){
-  const m=S.ui.mesC||mesAtual(); const cs=L('contas').filter(c=>(c.classe==='fixa')===(classe==='fixa') && mesDe(c)===m && passaCentro(c)).sort((a,b)=>(a.vencimento||'')<(b.vencimento||'')?-1:1);
+  const todas=classe==='todas'; const m=S.ui.mesC||mesAtual(); const cs=L('contas').filter(c=>(todas||(c.classe==='fixa')===(classe==='fixa')) && mesDe(c)===m && passaCentro(c)).sort((a,b)=>(a.vencimento||'')<(b.vencimento||'')?-1:1);
   const at=cs.filter(c=>c.status!=='cancelada'); const tot=at.reduce((s,c)=>s+(+c.valor||0),0), pago=at.filter(c=>c.status==='paga').reduce((s,c)=>s+(+c.valor||0),0), venc=at.filter(contaVencida);
-  const titulo = classe==='fixa'?'Contas fixas':'Contas variáveis';
-  const sub = classe==='fixa'?'Custos que se repetem: seguro, rastreador, parcelas, contador, aluguel. As recorrentes são criadas sozinhas todo mês.':'Custos que variam: manutenção, pneus, peças, reembolsos, despesas avulsas.';
-  const recs = classe==='fixa' ? L('recorrencias').filter(r=>!S.ui.centro||partesConta(r).some(p=>p.centro===S.ui.centro)).sort((a,b)=>String(a.descricao).localeCompare(String(b.descricao))) : [];
-  return head(titulo,sub,`<label class="row muted" for="fc_m">Mês <input id="fc_m" type="month" value="${m}" class="btn" style="font-weight:500"></label>${filtroCentroHTML()}${B('Exportar CSV','csvContas','data-classe="'+classe+'"')}${classe==='fixa'?B('Nova conta recorrente','new','data-k="recorrencias"'):''}${B(classe==='fixa'?'Nova conta fixa avulsa':'Nova conta variável','new','data-k="contas" data-preset=\'{"classe":"'+classe+'"'+(S.ui.centro?',"centro":"'+S.ui.centro+'"':'')+'}\'',1)}`)+
+  const titulo = todas?'Contas a pagar':classe==='fixa'?'Contas fixas':'Contas variáveis';
+  const sub = todas?'Tudo o que a F2 paga: consórcio, seguro, IPVA, oficina, pneus. Escolha o carro em cada conta para saber quanto ele custa. As contas recorrentes são criadas sozinhas todo mês.':classe==='fixa'?'Custos que se repetem: seguro, rastreador, parcelas, contador, aluguel. As recorrentes são criadas sozinhas todo mês.':'Custos que variam: manutenção, pneus, peças, reembolsos, despesas avulsas.';
+  const recs = (todas||classe==='fixa') ? L('recorrencias').filter(r=>!S.ui.centro||partesConta(r).some(p=>p.centro===S.ui.centro)).sort((a,b)=>String(a.descricao).localeCompare(String(b.descricao))) : [];
+  return head(titulo,sub,`<label class="row muted" for="fc_m">Mês <input id="fc_m" type="month" value="${m}" class="btn" style="font-weight:500"></label>${filtroCentroHTML()}${B('Exportar CSV','csvContas','data-classe="'+classe+'"')}${(todas||classe==='fixa')?B('Nova conta recorrente','new','data-k="recorrencias"'):''}${B(todas?'Nova conta':classe==='fixa'?'Nova conta fixa avulsa':'Nova conta variável','new','data-k="contas" data-preset=\'{'+(todas?'':'"classe":"'+classe+'"')+(S.ui.centro?(todas?'':',')+'"centro":"'+S.ui.centro+'"':'')+'}\'',1)}`)+
   `<div class="stack"><div class="kpis">${kpi('Total do mês',money(tot),mesbr(m))}${kpi('Pago',money(pago),'')}${kpi('A pagar',money(tot-pago),venc.length?`<em class="neg">${venc.length} vencida(s)</em>`:'')}</div>
   <section><h3>${titulo} de ${mesbr(m)}</h3>${tabelaContas(cs,true)}</section>
-  ${classe==='fixa'?`<section><h3>Contas recorrentes (geradas todo mês)</h3>${tabela([{h:'Descrição',f:r=>`<b>${esc(r.descricao)}</b><br><small class="muted">${esc([r.categoria,r.fornecedor].filter(Boolean).join(' · '))}</small>`},{h:'Centro de custo',f:r=>rateioHTML(r)},{h:'Valor',n:1,f:r=>money(r.valor)+(r.periodicidade==='anual'?' <small class="muted">por ano</small>':'')},{h:'Vence dia',n:1,f:r=>esc(r.diaVenc)},{h:'Período',f:r=>`${mesbr(r.inicio)} – ${r.fim?mesbr(r.fim):'sem fim'}`},{h:'Situação',f:r=>r.ativa?'<span class="pill p-ok">Ativa</span>':'<span class="pill">Pausada</span>'}],recs,'Nenhuma conta recorrente cadastrada.',r=>`data-act="edit" data-k="recorrencias" data-id="${r.id}"`)}</section>`:''}</div>`;
+  ${(todas||classe==='fixa')?`<section><h3>Contas recorrentes (geradas todo mês)</h3>${tabela([{h:'Descrição',f:r=>`<b>${esc(r.descricao)}</b><br><small class="muted">${esc([r.categoria,r.fornecedor].filter(Boolean).join(' · '))}</small>`},{h:'Centro de custo',f:r=>rateioHTML(r)},{h:'Valor',n:1,f:r=>money(r.valor)+(r.periodicidade==='anual'?' <small class="muted">por ano</small>':'')},{h:'Vence dia',n:1,f:r=>esc(r.diaVenc)},{h:'Período',f:r=>`${mesbr(r.inicio)} – ${r.fim?mesbr(r.fim):'sem fim'}`},{h:'Situação',f:r=>r.ativa?'<span class="pill p-ok">Ativa</span>':'<span class="pill">Pausada</span>'}],recs,'Nenhuma conta recorrente cadastrada.',r=>`data-act="edit" data-k="recorrencias" data-id="${r.id}"`)}</section>`:''}</div>`;
 }
 function vReceber(){
   const fs=L('faturas').sort((a,b)=>a.competencia<b.competencia?1:a.competencia>b.competencia?-1:((a.criadoEm||'')<(b.criadoEm||'')?1:-1));
@@ -1355,7 +1387,7 @@ function vPainelGeral(al){
   const comPrazo=cs.filter(c=>c.fim), semPrazo=cs.filter(c=>!c.fim); const mensalSemPrazo=semPrazo.reduce((s,c)=>s+(+c.aluguel||0),0);
   const fatMes=L('faturas').filter(f=>f.status!=='cancelada'&&f.competencia===mesMais(m,-1)); const aEmitir=cs.filter(c=>c.inicio<=mesMais(m,-1)+'-31' && !fatMes.some(f=>f.contratoId===c.id));
   const custoMes=r.fixa+r.variavel; const temMov=r.rec||custoMes;
-  const emUso=ativos.filter(v=>usoAberto(v.id));
+  const emUso=SO_F2?[]:ativos.filter(v=>usoAberto(v.id));
   const pendHTML=`<section class="card" style="padding:0"><div style="padding:14px 14px 8px"><h3>Pendências (${al.length})</h3></div><div class="alerts">${al.length?al.slice(0,14).map((a,i)=>`<div class="alert" data-al="${i}" role="button" tabindex="0"><span class="sev ${a.sev}"></span><div><b>${esc(a.titulo)}</b><small>${esc(a.detalhe)}</small></div><span class="muted">›</span></div>`).join(''):'<div class="empty">Nenhuma pendência. Tudo em dia.</div>'}${al.length>14?`<div class="empty">+ ${al.length-14} pendências</div>`:''}</div></section>`;
   const lado=[
     emUso.length?`<section><h3>Em uso agora</h3>${tabela([{h:'Veículo',f:v=>placaHTML(v)},{h:'Com quem',f:v=>{const u=usoAberto(v.id); return `<b>${esc(nomeCondutor(u))}</b><br><small class="muted">desde ${dtbr(u.inicio)}</small>`;}}], emUso, '', v=>`data-go="veiculo" data-id="${v.id}" data-tab="uso"`)}</section>`:'',
@@ -1364,7 +1396,7 @@ function vPainelGeral(al){
   const abTot=ab.reduce((s,f)=>s+(+f.total||0),0);
   return head('Painel',`Hoje, ${dbr(hoje())}`,`${B('Gerar fatura','gerarFatura','',1)}`)+
   `<div class="stack">
-  <div class="kpis">${kpiL('Clientes',cliAt.size,cliAt.size===1?'com contrato ativo':'com contrato ativo','clientes')}${kpiL('Frota',ativos.length+(ativos.length===1?' carro':' carros'),frotaTxt||'—','veiculos')}${kpiL('Contratos ativos',cs.length,money(mensal)+' por mês','contratos')}${kpiL('Faturas',abTot?money(abTot):aEmitir.length?`<em class="neg">${aEmitir.length} a emitir</em>`:'Em dia',atr.length?`<em class="neg">${atr.length} em atraso</em>`:abTot?ab.length+' em aberto':aEmitir.length?'de '+mesbr(mesMais(m,-1)):'nenhuma em aberto','receber')}${kpiL('Contas a pagar',money(cAb.reduce((s,c)=>s+(+c.valor||0),0)),cVenc.length?`<em class="neg">${cVenc.length} vencida(s)</em>`:cSem.length?cSem.length+' vence(m) em 7 dias':'em dia','fixas')}</div>
+  <div class="kpis">${kpiL('Clientes',cliAt.size,cliAt.size===1?'com contrato ativo':'com contrato ativo','clientes')}${kpiL('Frota',ativos.length+(ativos.length===1?' carro':' carros'),frotaTxt||'—','veiculos')}${kpiL('Contratos ativos',cs.length,money(mensal)+' por mês','contratos')}${kpiL('Faturas',abTot?money(abTot):aEmitir.length?`<em class="neg">${aEmitir.length} a emitir</em>`:'Em dia',atr.length?`<em class="neg">${atr.length} em atraso</em>`:abTot?ab.length+' em aberto':aEmitir.length?'de '+mesbr(mesMais(m,-1)):'nenhuma em aberto','receber')}${kpiL('Contas a pagar',money(cAb.reduce((s,c)=>s+(+c.valor||0),0)),cVenc.length?`<em class="neg">${cVenc.length} vencida(s)</em>`:cSem.length?cSem.length+' vence(m) em 7 dias':'em dia','contas')}</div>
   ${temMov?`<section><h3>Mês de ${mesbr(m)}</h3><div class="kpis">${kpiL('Faturado',money(r.rec),'previsto: '+money(mensal),'receber')}${kpiL('Custos',money(custoMes),'fixos '+money(r.fixa)+' · variáveis '+money(r.variavel),'resultado')}${kpiL('Resultado',`<em class="${r.res<0?'neg':''}">${money(r.res)}</em>`,r.mg!=null?'margem '+nf(r.mg)+'%':'','resultado')}</div></section>${graficoMeses()}`:''}
   ${lado.length?`<div class="grid2">${pendHTML}<div class="stack">${lado.join('')}</div></div>`:pendHTML}
   </div>`;
@@ -1378,7 +1410,7 @@ function vClientes(){
   `<div class="stack"><section><h3>Ativos (${at.length})</h3>${tabela(cols,at.map(lin),'Nenhum cliente com contrato ativo.',r=>`data-go="cliente" data-id="${r.c.id}"`)}</section>
   ${out.length?`<section><h3>Sem contrato ativo (${out.length})</h3>${tabela(cols,out.map(lin),'',r=>`data-go="cliente" data-id="${r.c.id}"`)}</section>`:''}</div>`;
 }
-const C_TABS=[['resumo','Resumo'],['contratos','Contratos'],['motoristas','Motoristas'],['faturas','Faturas'],['chamados','Chamados']];
+const C_TABS=SO_F2?[['resumo','Resumo'],['contratos','Contratos'],['faturas','Faturas']]:[['resumo','Resumo'],['contratos','Contratos'],['motoristas','Motoristas'],['faturas','Faturas'],['chamados','Chamados']];
 function vCliente(id){
   const c=G('clientes',id); if(!c) return head('Cliente não encontrado');
   const t=S.ui.ctab||'resumo';
@@ -1388,12 +1420,12 @@ function vCliente(id){
   const pend=L('pacotes').filter(k=>k.status==='solicitado' && conts.some(x=>x.id===k.contratoId));
   let body='';
   if(t==='resumo'){ const ab=fats.filter(f=>f.status==='aberta');
-    body=`<div class="stack"><div class="kpis">${kpi('Carros alugados',ativos.length,'')}${kpi('Aluguel mensal',money(ativos.reduce((s,x)=>s+(+x.aluguel||0),0)),'')}${kpi('A receber até o fim',money(ativos.reduce((s,x)=>s+aReceberContrato(x),0)),'estimado')}${kpi('Faturas em aberto',money(ab.reduce((s,f)=>s+(+f.total||0),0)),ab.length+' fatura(s)')}${kpi('Motoristas',conds.length,conds.filter(d=>d.status==='pendente').length?conds.filter(d=>d.status==='pendente').length+' aguardando':'')}</div>
+    body=`<div class="stack"><div class="kpis">${kpi('Carros alugados',ativos.length,'')}${kpi('Aluguel mensal',money(ativos.reduce((s,x)=>s+(+x.aluguel||0),0)),'')}${kpi('A receber até o fim',money(ativos.reduce((s,x)=>s+aReceberContrato(x),0)),'estimado')}${kpi('Faturas em aberto',money(ab.reduce((s,f)=>s+(+f.total||0),0)),ab.length+' fatura(s)')}${SO_F2?'':kpi('Motoristas',conds.length,conds.filter(d=>d.status==='pendente').length?conds.filter(d=>d.status==='pendente').length+' aguardando':'')}</div>
       <div class="card"><dl class="info"><div><dt>Tipo</dt><dd>${esc(c.tipo||'—')}</dd></div><div><dt>CNPJ / CPF</dt><dd>${esc(c.documento||'—')}</dd></div><div><dt>Gestor</dt><dd>${esc(c.contato||'—')}</dd></div><div><dt>Telefone</dt><dd>${esc(c.telefone||'—')}</dd></div><div><dt>E-mail</dt><dd>${esc(c.email||'—')}</dd></div><div><dt>Endereço</dt><dd>${esc(c.endereco||'—')}</dd></div></dl></div>
-      ${pend.length?`<div class="note">${pend.length} pedido(s) de km adicional aguardando aprovação. Veja em Contratos.</div>`:''}
+      ${pend.length&&!SO_F2?`<div class="note">${pend.length} pedido(s) de km adicional aguardando aprovação. Veja em Contratos.</div>`:''}
       <section><h3>Carros do contrato (${ativos.length})</h3>${ativos.length?`<div class="vgrid">${ativos.map(k=>vCard(G('veiculos',k.veiculoId))).join('')}</div>`:'<div class="tw"><div class="empty">Nenhum carro alugado agora.</div></div>'}</section></div>`; }
   else if(t==='contratos'){ body=`<div class="stack"><div class="row">${B('Novo contrato','new','data-k="contratos" data-preset=\'{"clienteId":"'+id+'"}\'',1)}</div>${tabelaContratos(conts)}
-    <section><h3>Pedidos de km adicional</h3>${tabela([{h:'Veículo',f:k=>{const x=G('contratos',k.contratoId); return x?vCell(x.veiculoId):'—';}},{h:'Km',n:1,f:k=>kmf(k.km)},{h:'Preço',n:1,f:k=>money(k.preco)},{h:'Solicitado',f:k=>dtbr(k.solicitadoEm)},{h:'Situação',f:k=>`<span class="pill ${k.status==='aprovado'?'p-ok':k.status==='faturado'?'p-info':k.status==='recusado'?'p-bad':'p-warn'}">${esc(k.status)}</span>`},{h:'',f:k=>k.status==='solicitado'?`<button class="btn sm" data-act="aprovarPacote" data-id="${k.id}" data-stop>Aprovar</button> <button class="btn sm danger" data-act="recusarPacote" data-id="${k.id}" data-stop>Recusar</button>`:''}],L('pacotes').filter(k=>conts.some(x=>x.id===k.contratoId)).sort((a,b)=>(a.solicitadoEm||'')<(b.solicitadoEm||'')?1:-1),'Nenhum pedido.')}</section></div>`; }
+    ${SO_F2?'':`<section><h3>Pedidos de km adicional</h3>${tabela([{h:'Veículo',f:k=>{const x=G('contratos',k.contratoId); return x?vCell(x.veiculoId):'—';}},{h:'Km',n:1,f:k=>kmf(k.km)},{h:'Preço',n:1,f:k=>money(k.preco)},{h:'Solicitado',f:k=>dtbr(k.solicitadoEm)},{h:'Situação',f:k=>`<span class="pill ${k.status==='aprovado'?'p-ok':k.status==='faturado'?'p-info':k.status==='recusado'?'p-bad':'p-warn'}">${esc(k.status)}</span>`},{h:'',f:k=>k.status==='solicitado'?`<button class="btn sm" data-act="aprovarPacote" data-id="${k.id}" data-stop>Aprovar</button> <button class="btn sm danger" data-act="recusarPacote" data-id="${k.id}" data-stop>Recusar</button>`:''}],L('pacotes').filter(k=>conts.some(x=>x.id===k.contratoId)).sort((a,b)=>(a.solicitadoEm||'')<(b.solicitadoEm||'')?1:-1),'Nenhum pedido.')}</section>`}</div>`; }
   else if(t==='motoristas'){ body=`<div class="stack"><div class="row">${B('Novo motorista','new','data-k="condutores" data-preset=\'{"clienteId":"'+id+'"}\'',1)}</div>${tabela([{h:'Nome',f:d=>`<b>${esc(d.nome)}</b>${d.autoCadastro?' <span class="tag">Pelo QR</span>':''}`},{h:'CPF',f:d=>`<span class="mono">${esc(d.cpf||'—')}</span>`},{h:'Contato',f:d=>esc([d.telefone,d.email].filter(Boolean).join(' · ')||'—')},{h:'CNH vence',f:d=>{const x=d.cnhValidade; return x?`<span class="${x<hoje()?'pill p-bad':''}">${dbr(x)}</span>`:'—';}},{h:'Situação',f:d=>`<span class="pill ${d.status==='aprovado'?'p-ok':d.status==='bloqueado'?'p-bad':'p-warn'}">${esc({aprovado:'Aprovado',pendente:'Pendente',bloqueado:'Bloqueado'}[d.status]||d.status)}</span>`},{h:'Usos',n:1,f:d=>L('usos').filter(u=>u.condutorId===d.id).length}],conds,'Nenhum motorista cadastrado.',d=>`data-act="edit" data-k="condutores" data-id="${d.id}"`)}</div>`; }
   else if(t==='faturas'){ body=`<div class="stack"><div class="row">${B('Gerar fatura','gerarFatura','',1)}</div>${tabelaFaturas(fats)}</div>`; }
   else if(t==='chamados'){ body=tabelaChamados(chs); }
@@ -2401,14 +2433,14 @@ function render(){
     case 'painel': h=vPainel(al); break; case 'clientes': h=vClientes(); break; case 'cliente': h=vCliente(r.id); break;
     case 'veiculos': h=vVeiculos(); break; case 'veiculo': h=vVeiculo(r.id); break; case 'contratos': h=vContratos(); break;
     case 'uso': h=vUso(); break; case 'abast': h=vAbastF2(); break; case 'manut': h=vManut(); break; case 'reemb': h=vReemb(); break; case 'multas': h=vMultas(); break;
-    case 'docs': h=vDocs(); break; case 'vistorias': h=vVistorias(); break; case 'faturas': case 'receber': h=vReceber(); break; case 'financeiro': case 'resultado': h=vResultado(); break; case 'fixas': h=vContas('fixa'); break; case 'variaveis': h=vContas('variavel'); break; case 'config': h=vConfig(); break; case 'auditoria': h=vAuditoria(); break; case 'melhorias': h=vMelhorias(); break;
+    case 'docs': h=vDocs(); break; case 'vistorias': h=vVistorias(); break; case 'faturas': case 'receber': h=vReceber(); break; case 'financeiro': case 'resultado': h=vResultado(); break; case 'contas': case 'fixas': case 'variaveis': h=vContas('todas'); break; case 'config': h=vConfig(); break; case 'auditoria': h=vAuditoria(); break; case 'melhorias': h=vMelhorias(); break;
   }
   const bf=document.activeElement&&document.activeElement.id==='vbusca'; const pos=bf?document.activeElement.selectionStart:null;
   const sy=window.scrollY; main.innerHTML=h; window.scrollTo(0,sy);
   if(r.view==='config') bindConfig();
   if(r.view==='veiculos'){ filtrarVeiculos(S.ui.busca||''); if(bf){ const i=$('#vbusca'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } } }
 }
-function go(view,id,tab){ S.route={view,id}; if(view==='config'&&tab) S.ui.cfgtab=tab; if(view==='veiculo') S.ui.vtab=tab||'resumo'; if(view==='cliente') S.ui.ctab=tab||'resumo'; if(['fixas','variaveis'].includes(view)) gerarRecorrentes().then(n=>{ if(n) render(); }); window.scrollTo(0,0); render(); }
+function go(view,id,tab){ S.route={view,id}; if(view==='config'&&tab) S.ui.cfgtab=tab; if(view==='veiculo') S.ui.vtab=tab||'resumo'; if(view==='cliente') S.ui.ctab=tab||'resumo'; if(['contas','fixas','variaveis'].includes(view)) gerarRecorrentes().then(n=>{ if(n) render(); }); window.scrollTo(0,0); render(); }
 document.addEventListener('click', async e=>{
   const fl=e.target.closest('[data-file]'); if(fl){ e.preventDefault(); Anexos.abrir(fl.dataset.file); return; }
   if(e.target.closest('a[href]')) return;
@@ -2425,14 +2457,14 @@ document.addEventListener('click', async e=>{
     if(a==='sair') sair();
     else if(a==='verComo') openVerComo();
     else if(a==='pagarConta'){ const c=G('contas',id); const dt=await perguntar('Pagar conta',`${esc(c.descricao)} · ${money(c.valor)} · ${esc(centroLbl(c.centro))}. Data do pagamento:`,'Marcar como paga','date'); if(dt!==null){ await SCHEMA.contas.save({...c,status:'paga',pagoEm:dt},id,c); toast('Conta paga. Para anexar o comprovante, abra a conta.'); } }
-    else if(a==='csvContas'){ const cl=el.dataset.classe; const m=S.ui.mesC||mesAtual(); const cs=L('contas').filter(c=>(c.classe==='fixa')===(cl==='fixa')&&mesDe(c)===m&&passaCentro(c));
+    else if(a==='csvContas'){ const cl=el.dataset.classe; const m=S.ui.mesC||mesAtual(); const cs=L('contas').filter(c=>(cl==='todas'||(c.classe==='fixa')===(cl==='fixa'))&&mesDe(c)===m&&passaCentro(c));
       csv(`contas-${cl}-${m}.csv`,cs,[['Vencimento',c=>dbr(c.vencimento)],['Centro de custo',c=>centroLbl(c.centro)],['Descrição',c=>c.descricao],['Categoria',c=>c.categoria||''],['Fornecedor',c=>c.fornecedor||''],['Tipo',c=>lbl(CLASSE,c.classe)],['Valor (R$)',c=>nf(c.valor,2)],['Situação',c=>c.status],['Pago em',c=>dbr(c.pagoEm)]]); }
     else if(a==='copiarMelhorias'){ const t=textoMelhorias(); let ok=false; try{ await navigator.clipboard.writeText(t); ok=true; }catch(x){}
       if(ok) toast('Lista copiada. Cole na conversa com o Claude para implementar.'); else { const dlg=$('#dlg'); dlg.innerHTML=`<form><div class="dh"><h2>Lista de melhorias</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc"><p class="muted" style="margin-top:0">Selecione tudo e copie.</p><textarea readonly style="width:100%;min-height:320px">${esc(t)}</textarea></div></form>`; dlg.querySelector('[data-close]').onclick=()=>dlg.close(); dlg.showModal(); } }
     else if(a==='docContrato') abrirDocContrato(id);
     else if(a==='modeloContrato'){ if(S.me.perfil!=='admin'){ toast('Só o administrador altera o modelo do contrato.'); return; } openModeloContrato(); }
     else if(a==='csvRentab') csv(`rentabilidade-${hoje()}.csv`,linhasRentab(),[['Placa',r=>PL(r.v.id)],['Modelo',r=>r.v.modelo||''],['Situação',r=>VSTATUS[r.status]||r.status],['Receita acumulada',r=>nf(r.acc.rec,2)],['Custos acumulados',r=>nf(r.acc.custo,2)],['Resultado acumulado',r=>nf(r.acc.res,2)],['Preço de compra',r=>nf(r.compra,2)],['Retorno sobre a compra (%)',r=>r.roi!=null?nf(r.roi,1):''],['Km rodado',r=>r.kmRod],['Custo por km',r=>r.custoKm!=null?nf(r.custoKm,2):''],['Aluguel ÷ compra (%/mês)',r=>r.yieldMes!=null?nf(r.yieldMes,2):''],['Resultado médio 3 meses',r=>r.med!=null?nf(r.med,2):''],['Rende por mês (aluguel − fixas)',r=>nf(r.rendeMes,2)],['Despesas fixas por mês',r=>nf(r.fixasMes,2)],['Meses para se pagar',r=>r.payback!=null?nf(r.payback,0):'']]);
-    else if(a==='centroAdm'){ S.ui.centro=CENTRO_ADM; go('variaveis'); }
+    else if(a==='centroAdm'){ S.ui.centro=CENTRO_ADM; go('contas'); }
     else if(a==='sairVerComo') sairVerComo();
     else if(a==='pvtab'){ S.p.vtab=el.dataset.tab||'resumo'; render(); }
     else if(a==='qr') await openQR(id);
@@ -2485,7 +2517,7 @@ async function salvarCfg(p){ const n={...(G('config','geral')||{}),...p,atualiza
 async function salvarPlanos(lista){ await S.db.doc('config/planos').set(limpa({lista,atualizadoEm:new Date().toISOString(),atualizadoPor:S.uid})); const g=G('config','geral'); if(g&&(g.planos||[]).length) await S.db.doc('config/geral').set(limpa({...g,id:undefined,planos:[]})); audit('alterou modelos de plano','config','planos',lista.length+' modelo(s)'); toast('Modelos de plano salvos.'); }
 function bindConfig(){ const imp=$('#cf_imp'); if(imp) imp.onchange=e=>{ const fl=e.target.files[0]; e.target.value=''; if(fl) importar(fl); }; const f=$('#cfgf'); if(!f) return; f.onsubmit=async e=>{ e.preventDefault(); const g=id=>f.querySelector(id).value;
   const matriz={}; CATS.forEach(c=>matriz[c[0]]=f.querySelector('#mz_'+c[0]).value);
-  try{ await salvarCfg({alertasKm:g('#c_al').split(',').map(x=>+x.trim()).filter(x=>x>0).sort((a,b)=>a-b),horasCheckin:+g('#c_hc')||14,diasProjecao:+g('#c_dp')||30,diasAvisoVenc:+g('#c_dv')||30,diasAvisoMulta:+g('#c_dm')||5,limiteEmergencia:+g('#c_le')||0,carenciaPadrao:+g('#c_cr')||0,matriz,prev:Object.fromEntries(['pvRevKm','pvRevMeses','pvOleoKm','pvOleoMeses','pvAlinKm','pvAlinMeses'].map(k=>[k,+g('#pv_'+k)||0])),prevAvisoKm:+g('#c_pak')||1000,prevAvisoDias:+g('#c_pad')||30}); }catch(ex){ toast(errMsg(ex)); } }; }
+  try{ await salvarCfg({alertasKm:g('#c_al').split(',').map(x=>+x.trim()).filter(x=>x>0).sort((a,b)=>a-b),horasCheckin:+g('#c_hc')||14,diasProjecao:+g('#c_dp')||30,diasAvisoVenc:+g('#c_dv')||30,diasAvisoMulta:+g('#c_dm')||5,limiteEmergencia:+g('#c_le')||0,carenciaPadrao:+g('#c_cr')||0,matriz,prev:Object.fromEntries(PV_CAMPOS.map(([k])=>[k,+g('#pv_'+k)||0])),prevAvisoKm:+g('#c_pak')||1000,prevAvisoDias:+g('#c_pad')||30}); }catch(ex){ toast(errMsg(ex)); } }; }
 function openPlano(){
   const dlg=$('#dlg'); dlg.innerHTML=`<form id="frm"><div class="dh"><h2>Novo modelo de plano</h2><button type="button" class="btn ghost" data-close>Fechar</button></div><div class="dc"><div class="fgrid">
     <div class="fld full"><label for="pl_n">Nome</label><input id="pl_n" placeholder="Ex.: Executivo 24m · 2.000 km"></div><div class="fld"><label for="pl_p">Prazo (meses)</label><input id="pl_p" type="number" required></div><div class="fld"><label for="pl_k">Franquia (km/mês)</label><input id="pl_k" type="number" required></div>
@@ -2535,7 +2567,8 @@ function usoAnexos(u){ const b=[]; if(u.fotoOdoIni) b.push(`<button type="button
   const fs=(u.fotosIni||[]).concat(u.fotosFim||[]); if(fs.length) b.push(arqs(fs)); const m=[mapa(u.localIni),mapa(u.localFim)].filter(Boolean); if(m.length) b.push(m.join(' · ')); return b.join(' ') || '—'; }
 
 /* ---------- manutenção preventiva ---------- */
-const PREV_ITENS=[['preventiva','Revisão','pvRevKm','pvRevMeses'],['oleo','Troca de óleo','pvOleoKm','pvOleoMeses'],['alinhamento','Alinhamento e balanceamento','pvAlinKm','pvAlinMeses']];
+const PREV_ITENS=[['pneus','Pneus','pvPneuKm','pvPneuMeses'],['bateria','Bateria','pvBatKm','pvBatMeses'],['alinhamento','Alinhamento e balanceamento','pvAlinKm','pvAlinMeses'],['oleo','Troca de óleo','pvOleoKm','pvOleoMeses'],['preventiva','Revisão','pvRevKm','pvRevMeses']];
+const PV_CAMPOS=[['pvPneuKm','Pneus a cada (km)'],['pvPneuMeses','Pneus a cada (meses)'],['pvBatKm','Bateria a cada (km)'],['pvBatMeses','Bateria a cada (meses)'],['pvAlinKm','Alinhamento a cada (km)'],['pvAlinMeses','Alinhamento a cada (meses)'],['pvOleoKm','Troca de óleo a cada (km)'],['pvOleoMeses','Troca de óleo a cada (meses)'],['pvRevKm','Revisão a cada (km)'],['pvRevMeses','Revisão a cada (meses)']];
 function preventivas(v){
   const P=cfg(); const pd0=P.prev||{}; const km=kmAtual(v); const h=hoje(); const out=[];
   for(const [cat,nome,kk,km_] of PREV_ITENS){
@@ -2554,11 +2587,12 @@ function preventivas(v){
 const PREV_ST={ok:['p-ok','Em dia'],proxima:['p-warn','Próxima'],vencida:['p-bad','Vencida']};
 function prevHTML(v, comBotao){
   const ps=preventivas(v);
-  const linhas=ps.map(p=>`<div class="row" style="justify-content:space-between;align-items:flex-start;border-top:1px solid var(--line);padding-top:8px"><div style="min-width:0"><b>${esc(p.nome)}</b> <span class="pill ${PREV_ST[p.st][0]}">${PREV_ST[p.st][1]}</span><br>
-    <small class="muted">Próxima: ${[p.pk!=null?kmf(p.pk)+(p.faltaKm!=null?(p.faltaKm>0?' (faltam '+kmf(p.faltaKm)+')':' (passou '+kmf(-p.faltaKm)+')'):''):'',p.pd?'até '+dbr(p.pd):''].filter(Boolean).join(' · ')}</small><br>
-    <small class="muted">${p.ult?'Último: '+dbr(p.ult.data)+(p.ult.km?' · '+kmf(p.ult.km):''):'Sem serviço registrado: estimativa pelo cadastro do veículo'}</small></div></div>`).join('');
-  return `<section class="card stack" style="gap:8px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Manutenção preventiva</h3>${comBotao?B('Registrar serviço feito','pform','data-k="p_preventiva" data-id="'+v.id+'"'):''}</div>
-    ${linhas||'<p class="muted" style="margin:0">Nenhum plano de preventiva definido para este veículo.</p>'}<small class="muted">Combustível, revisões, óleo e alinhamento ficam a cargo do cliente. Registre cada serviço com a nota para manter o histórico do carro.</small></section>`;
+  const ult=p=>p.ult?`${dbr(p.ult.data)}${p.ult.km?' · '+kmf(p.ult.km):''}${+p.ult.valor?' · '+money(p.ult.valor):''}`:'<span class="muted">sem registro</span>';
+  const prox=p=>[p.pk!=null?kmf(p.pk)+(p.faltaKm!=null?(p.faltaKm>0?' (faltam '+kmf(p.faltaKm)+')':' (passou '+kmf(-p.faltaKm)+')'):''):'',p.pd?'até '+dbr(p.pd):''].filter(Boolean).join(' · ')+(p.ult?'':' <small class="muted">estimado</small>');
+  const pre=cat=>JSON.stringify({veiculoId:v.id,categoria:cat,arcaCom:'f2',km:kmAtual(v)||''}).replace(/'/g,'&#39;');
+  return `<section class="stack" style="gap:8px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Últimas trocas</h3></div>
+    ${ps.length?tabela([{h:'Item',f:p=>`<b>${esc(p.nome)}</b>`},{h:'Última vez',f:ult},{h:'Próxima',f:prox},{h:'Situação',f:p=>`<span class="pill ${PREV_ST[p.st][0]}">${PREV_ST[p.st][1]}</span>`},{h:'',f:p=>`<button class="btn sm" data-act="new" data-k="manutencoes" data-preset='${pre(p.cat)}' data-stop>Registrar troca</button>`}],ps,''):'<p class="muted" style="margin:0">Nenhum controle definido em Configurações → Manutenção preventiva.</p>'}
+    <small class="muted">Dica: ao lançar a conta da oficina em Contas a pagar, escolha o carro e o tipo de manutenção; a troca entra aqui sozinha. "Estimado" = ainda sem troca registrada, contado a partir do cadastro do carro.</small></section>`;
 }
 
 /* ---------- abastecimento ---------- */
@@ -3086,6 +3120,9 @@ async function boot(){
   Supa.sb.auth.onAuthStateChange((ev)=>{ if(ev==='PASSWORD_RECOVERY') telaNovaSenha(); });
   if(/type=recovery/.test(location.hash)) return;
   let sess=null; try{ sess=(await Supa.sb.auth.getSession()).data.session; }catch(e){}
+  if(SO_F2 && PORTA!=='f2'){
+    if(!PORTA){ location.replace('/f2'); return; }
+    telaShell(`<h1>Área desativada</h1><p class="muted">O F2 Conect está sendo usado só pela equipe da F2 Carloc. Fale com a F2 se precisar de alguma informação.</p><div class="row"><a class="btn pri" href="/f2">Sou da F2</a></div>`); return; }
   if(!PORTA){
     if(qrPendente()){ location.replace('/motorista'); return; }
     if(sess){ try{ const {data:p}=await Supa.sb.from('perfis').select('perfil,ativo').eq('id',sess.user.id).maybeSingle(); const porta=p&&p.ativo&&portaDoPerfil(p.perfil); if(porta){ location.replace('/'+porta); return; } }catch(e){} }
