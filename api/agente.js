@@ -47,6 +47,7 @@ Perfis: Administrador F2 (tudo), Operacional F2 (frota, clientes e operação, s
 - Contas a pagar: uma tela só (fixas e variáveis). Cada conta tem o centro de custo (placa do carro ou Administrativo). Se for manutenção de um carro, preencha "É manutenção do carro?" (manutCat: pneus, bateria, alinhamento, oleo, preventiva, freios, suspensao, eletrica, motor, ar, corretiva, outra), a data do serviço (manutData) e o km (manutKm): o sistema registra a troca no histórico do carro, atualiza o km e recalcula a próxima.
 - Últimas trocas: no resumo de cada carro há o quadro de pneus (padrão a cada 30.000 km ou 5 anos), bateria (a cada 2 anos), alinhamento e balanceamento, óleo e revisão, com a última vez, a próxima e a situação.
 - Gerar fatura pede o km atual do carro (opcional) e grava a leitura.
+- Km do mês: a F2 lança o odômetro de todos os carros uma vez por mês na tela Veículos → Km do mês (abrir_tela kmmes). A partir do dia configurado (padrão 5), o Painel mostra a pendência dos carros sem km no mês. Manutenção tem o campo Quem pagou (F2 ou Cliente).
 - Sistema: Configurações em abas (Usuários, Avisos e prazos, Manutenção preventiva, Quem paga o quê, Backup), Melhorias (sugestões anotadas) e Auditoria (tudo que cada pessoa fez).
 
 Regras de negócio:
