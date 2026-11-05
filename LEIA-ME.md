@@ -12,6 +12,13 @@ Pasta pronta para publicar. O sistema é um site estático (Vercel) que guarda t
 | `manifest.webmanifest`, `icon.svg` | Permitem instalar o site como app no celular |
 | `vercel.json` | Cabeçalhos de segurança e cache para o Vercel |
 
+## Versão 16: contrato sem o sistema e vistoria com fotos
+
+- O texto do contrato não fala mais do sistema F2 Conect (o cliente não tem acesso). Condutores são informados por escrito; avisos, pacotes de km e notificações de multa vão por e-mail ou WhatsApp; a LOCATÁRIA envia foto do odômetro até o dia 5 de cada mês; a cláusula 13 virou "Rastreamento e dados".
+- Cadastro do contrato ganhou a seção **Vistoria de entrega (Anexo I)**: data, odômetro, combustível, itens com avaria, observações e fotos do veículo.
+- O documento do contrato (Word e PDF) traz o Anexo I preenchido, com as fotos. Sem vistoria, o Anexo I sai em branco para preencher à mão.
+- A lista de Contratos mostra a coluna Vistoria. A vistoria também aparece na aba Vistorias do carro.
+
 ## Versão 15: km do mês
 
 - Nova tela Veículos → **Km do mês**: todos os carros numa lista, com o último km e um campo para o km de hoje. Salva tudo de uma vez e não aceita km menor que o último.

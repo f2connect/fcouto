@@ -348,6 +348,8 @@ const CATS = [
   ['corretiva','Corretiva (desgaste ou defeito)','f2'],['pneus','Pneus (desgaste natural)','f2'],['bateria','Bateria (vida útil normal)','f2'],['freios','Freios','f2'],['suspensao','Suspensão','f2'],
   ['eletrica','Elétrica','f2'],['motor','Motor','f2'],['transmissao','Transmissão','f2'],['ar','Ar-condicionado','f2'],['mau_uso','Dano por mau uso','apuracao'],['outra','Outra','f2']];
 const PREVENTIVAS = ['preventiva','oleo','alinhamento'];
+const VIST_ITENS=['Lataria e pintura','Para-brisa e vidros','Pneus e estepe','Faróis e lanternas','Retrovisores','Interior e bancos','Painel sem luzes de alerta','Documentos no veículo','Macaco, chave de roda e triângulo','Limpeza'];
+const COMB_LBL={reserva:'Reserva','1/4':'1/4','1/2':'1/2','3/4':'3/4',cheio:'Cheio'};
 /* Modo interno: só a equipe da F2 usa o sistema (sem área do cliente, motorista, check-in e QR). */
 const SO_F2 = true;
 const MANUT_CONTA = ['pneus','bateria','alinhamento','oleo','preventiva','freios','suspensao','eletrica','motor','ar','corretiva','outra'];
@@ -570,7 +572,7 @@ const SCHEMA = {
     {k:'multaRescisoria',l:'Multa rescisória',def:'30% dos aluguéis que faltam até o término',full:1,show:v=>v.modalidade!=='mensal'},
     {sec:'Quilometragem'},{k:'kmContratado',l:'Franquia de km por mês',t:'num',req:1,hint:'Use 0 para contrato sem limite.'},
     {k:'periodicidade',l:'Tipo de franquia',t:'sel',opts:opt([['cumulativa','Mensal cumulativa (o km não usado passa para o mês seguinte)'],['mensal','Mensal, não cumulativa'],['total','Total do contrato']]),def:'cumulativa'},
-    {k:'kmInicial',l:'Km do veículo na assinatura',t:'num',req:1},{k:'valorKmExcedente',l:'Valor do km excedente (R$)',t:'money'},
+    {k:'valorKmExcedente',l:'Valor do km excedente (R$)',t:'money'},
     {k:'valorKmExcedente2',l:'Km excedente acima de 30% da franquia (R$)',t:'money',hint:'Vazio = mesmo valor do km excedente.'},
     {k:'pacotesTxt',l:'Pacotes de km adicional oferecidos',full:1,hint:'Formato: km=preço, separados por vírgula. Ex.: 500=350, 1000=650'},
     {sec:'Uso, seguro e taxas'},{k:'finalidade',l:'Finalidade de uso',def:'apoio à fiscalização de empreendimentos',full:1},{k:'regiao',l:'Região de uso',def:'Minas Gerais'},
@@ -583,6 +585,12 @@ const SCHEMA = {
     {k:'limiteEmergencia',l:'Limite de emergência sem autorização (R$)',t:'money',defFn:()=>cfg().limiteEmergencia},
     {k:'carencia',l:'Dias parados antes do desconto (culpa da F2)',t:'num',defFn:()=>cfg().carenciaPadrao},
     {k:'localDevolucao',l:'Local de entrega e devolução',def:'Av. Nossa Senhora de Fátima, 6939, Gameleira, Belo Horizonte/MG',full:1},
+    {sec:'Vistoria de entrega (Anexo I)'},
+    {k:'vtData',l:'Data da vistoria',t:'date',hint:'Vazio = data de início do contrato.'},{k:'kmInicial',l:'Odômetro na entrega (km)',t:'num',req:1},
+    {k:'vtCombustivel',l:'Nível de combustível',t:'sel',opts:[{v:'',l:'—'}].concat(Object.entries(COMB_LBL).map(([v,l])=>({v,l})))},
+    {k:'vtChecklist',l:'Itens com avaria ou pendência (deixe em branco se está tudo OK)',t:'checklist',opts:VIST_ITENS,full:1},
+    {k:'vtAvarias',l:'Avarias e observações',t:'area',full:1},
+    {k:'vtFotos',l:'Fotos do veículo (frente, traseira, laterais, painel com odômetro e avarias)',t:'files',accept:'image/*',full:1,hint:'Pode escolher várias de uma vez. Entram no contrato, no Anexo I.'},
     {sec:'Outras condições'},{k:'status',l:'Situação',t:'sel',opts:opt([['ativo','Ativo'],['encerrado','Encerrado']]),def:'ativo'},
     {k:'condicoes',l:'Condições especiais',t:'area',full:1},{k:'pdf',l:'Contrato assinado (PDF)',t:'file',accept:'application/pdf',full:1}],
     async save(v,id,antes){
@@ -598,6 +606,8 @@ const SCHEMA = {
       await salvar('veiculos',v.veiculoId,{},'vinculou cliente');
       for(const d of L('documentos').filter(d=>d.veiculoId===v.veiculoId)) if((Store.docs['documentos/'+d.id]||{}).cid!==clienteDe('documentos',d,d.id)) await salvar('documentos',d.id,{},'vinculou cliente');
       if(!antes) await salvar('leituras',null,{veiculoId:v.veiculoId,km:+v.kmInicial,data:v.inicio+'T08:00',origem:'contrato',status:'verificada'},'registrou km');
+      { const c2=G('contratos',nid)||v; const vt=vistoriaDoContrato(c2); const temVt=c2.vtData||c2.vtCombustivel||c2.vtAvarias||(c2.vtFotos||[]).length||Object.keys(c2.vtChecklist||{}).length;
+        if(temVt && vt) await salvar('vistorias','ct_'+nid,{veiculoId:c2.veiculoId,contratoId:nid,clienteId:c2.clienteId,tipo:'entrega',data:(vt.data||c2.inicio)+'T09:00',km:+c2.kmInicial||null,combustivel:c2.vtCombustivel||'',checklist:c2.vtChecklist||{},avarias:c2.vtAvarias||'',fotos:c2.vtFotos||[],status:'sem_aceite',origem:'contrato'},'registrou vistoria de entrega'); }
       return nid; }},
   leituras:{col:'leituras', titulo:'Leitura de km', fields:[
     {k:'veiculoId',l:'Veículo',t:'ref',ref:'veiculos',req:1},{k:'km',l:'Km do odômetro',t:'num',req:1},{k:'data',l:'Data e hora',t:'dt',req:1,defFn:agora},
@@ -697,18 +707,18 @@ const SCHEMA = {
 };
 
 /* ===================== vistorias, usuários e formulários do portal ===================== */
-const VIST_ITENS=['Lataria e pintura','Para-brisa e vidros','Pneus e estepe','Faróis e lanternas','Retrovisores','Interior e bancos','Painel sem luzes de alerta','Documentos no veículo','Macaco, chave de roda e triângulo','Limpeza'];
+
 const VIST_T={entrega:'Entrega',devolucao:'Devolução',periodica:'Periódica',condutor:'Vistoria do condutor'};
 const VIST_ST={aguardando_aceite:'Aguardando aceite do cliente',aceita:'Aceita pelo cliente',contestada:'Contestada pelo cliente',sem_aceite:'Interna (sem aceite)',enviada:'Enviada pelo condutor',revisada:'Revisada pela F2'};
 const PERFIS=[['admin','Administrador F2'],['operacional','Operacional F2'],['financeiro','Financeiro F2'],['gestor','Gestor do cliente'],['condutor','Condutor'],['pendente','Pendente']];
 const EMERG={pane:'Pane',bateria:'Bateria',pneu:'Pneu furado',acidente:'Acidente',guincho:'Guincho',chave:'Chave perdida',roubo:'Roubo',furto:'Furto',mecanico:'Problema mecânico'};
 SCHEMA.vistorias={col:'vistorias',titulo:'Vistoria',fields:[
   {k:'veiculoId',l:'Veículo',t:'ref',ref:'veiculos',req:1,filter:v=>statusVeiculo(v)!=='vendido'},{k:'tipo',l:'Tipo',t:'sel',opts:opt(Object.entries(VIST_T).filter(([k])=>k!=='condutor')),req:1,def:'entrega'},
-  {k:'data',l:'Data e hora',t:'dt',req:1,defFn:agora},{k:'km',l:'Km do odômetro',t:'num',req:1},
+  {k:'data',l:'Data e hora',t:'dt',req:1,defFn:agora},{k:'km',l:'Odômetro (km)',t:'num',req:1},
   {k:'combustivel',l:'Nível de combustível',t:'sel',opts:opt([['reserva','Reserva'],['1/4','1/4'],['1/2','1/2'],['3/4','3/4'],['cheio','Cheio']])},
-  {k:'status',l:'Aceite',t:'sel',opts:opt(Object.entries(VIST_ST)),def:'aguardando_aceite'},
+  {k:'status',l:'Aceite',t:'sel',opts:opt(Object.entries(VIST_ST)),def:SO_F2?'sem_aceite':'aguardando_aceite',show:()=>!SO_F2},
   {k:'checklist',l:'Checklist: marque os itens COM avaria ou pendência',t:'checklist',opts:VIST_ITENS,full:1},
-  {k:'avarias',l:'Descrição das avarias',t:'area',full:1},{k:'fotos',l:'Fotos (frente, traseira, laterais, painel e avarias)',t:'files',accept:'image/*',full:1}],
+  {k:'avarias',l:'Descrição das avarias',t:'area',full:1},{k:'fotos',l:'Fotos do veículo (frente, traseira, laterais, painel com odômetro e avarias)',t:'files',accept:'image/*',full:1}],
   async save(v,id,antes){ if(antes&&antes.tipo==='condutor') v.tipo='condutor'; const c=contratoDoVeiculo(v.veiculoId,(v.data||'').slice(0,10)); v.contratoId=c?c.id:null; v.clienteId=c?c.clienteId:null;
     const nid=await salvar('vistorias',id,v);
     if(!antes) await salvar('leituras',null,{veiculoId:v.veiculoId,km:+v.km,data:v.data,origem:'vistoria',status:'verificada',origemId:nid},'registrou km');
@@ -2007,7 +2017,7 @@ function textoMelhorias(){ const ms=L('melhorias').filter(m=>['aprovada','nova',
 /* Marcação do modelo: "# " título, "## " seção, "### " cláusula, "- " item de lista, linhas "| a | b |" viram tabela,
    **negrito**, {{campo}} é preenchido pelo sistema, {{#campo}}…{{/campo}} só aparece quando o campo vale sim
    e {{^campo}}…{{/campo}} só quando vale não. */
-const CT_CAMPOS=[['numero','Número do contrato'],['locataria','Razão social do cliente'],['cnpj','CNPJ / CPF do cliente'],['endereco','Endereço do cliente'],['representante','Representante legal do cliente'],['cargo','Cargo do representante'],['cpfRepresentante','CPF do representante'],['email','E-mail do cliente'],['whatsapp','Telefone / WhatsApp do cliente'],['responsavelFrota','Responsável pela frota no cliente'],
+const CT_CAMPOS=[['vistoriaEntrega','Vistoria de entrega (Anexo I)'],['numero','Número do contrato'],['locataria','Razão social do cliente'],['cnpj','CNPJ / CPF do cliente'],['endereco','Endereço do cliente'],['representante','Representante legal do cliente'],['cargo','Cargo do representante'],['cpfRepresentante','CPF do representante'],['email','E-mail do cliente'],['whatsapp','Telefone / WhatsApp do cliente'],['responsavelFrota','Responsável pela frota no cliente'],
   ['veiculo','Marca e modelo'],['ano','Ano de fabricação/modelo'],['placa','Placa'],['cor','Cor'],['renavam','RENAVAM'],['chassi','Chassi'],['combustivel','Combustível'],['valorReferencia','Valor de referência (FIPE)'],
   ['finalidade','Finalidade de uso'],['regiao','Região de uso'],['plano','Plano marcado'],['inicio','Data de início'],['termino','Data de término'],['aluguel','Aluguel mensal'],['aluguelExtenso','Aluguel por extenso'],
   ['franquiaKm','Franquia de km'],['franquiaTipo','Tipo de franquia'],['kmExcedente','Valor do km excedente'],['kmExcedente2','Km excedente acima de 30%'],['diaVencimento','Dia de vencimento'],['mesVencimento','Mês do vencimento'],['indice','Índice de reajuste'],
@@ -2049,7 +2059,7 @@ Este quadro reúne os dados deste contrato. As Condições Gerais (Parte B) se r
 
 1.1. Este contrato é formado pelo Quadro-resumo (Parte A), por estas Condições Gerais (Parte B) e pelos Anexos. Havendo diferença entre eles, prevalece o Quadro-resumo.
 
-1.2. Para este contrato: **Condutor** é o empregado ou preposto da LOCATÁRIA cadastrado no sistema F2 Conect; **Sistema F2 Conect** é a plataforma da LOCADORA para registro de uso, quilometragem, abastecimentos, vistorias, chamados e faturas; **Valor de referência** é o valor do veículo no item 4.
+1.2. Para este contrato: **Condutor** é o empregado ou preposto da LOCATÁRIA autorizado por ela a dirigir o veículo e informado por escrito à LOCADORA; **Valor de referência** é o valor do veículo no item 4.
 
 ### CLÁUSULA 2 – OBJETO
 
@@ -2071,11 +2081,11 @@ Este quadro reúne os dados deste contrato. As Condições Gerais (Parte B) se r
 
 4.1. A LOCATÁRIA paga o aluguel mensal do item 8.
 
-4.2. A franquia de km é a do item 9. A quilometragem é apurada pelo odômetro, pelos registros de uso (check-in e checkout) no Sistema F2 Conect, pelas vistorias e pelo rastreador. Em divergência, prevalece o odômetro conferido em vistoria.
+4.2. A franquia de km é a do item 9. A quilometragem é apurada pelo odômetro, conferido nas vistorias e nas leituras mensais, e pelo rastreador. A LOCATÁRIA envia à LOCADORA, até o dia 5 de cada mês, foto do odômetro pelo WhatsApp ou e-mail do item 3. Em divergência, prevalece o odômetro conferido em vistoria.
 
 {{#cumulativa}}4.3. A franquia é cumulativa: o km não usado em um mês passa para os meses seguintes, dentro da vigência. Todo mês é apurado o saldo (franquia acumulada menos km rodados). Se o saldo ficar negativo, o km excedente é cobrado pelos valores do item 10 na fatura seguinte e o saldo volta a zero. O saldo não usado no fim do contrato ou na prorrogação não gera crédito nem devolução.{{/cumulativa}}{{^cumulativa}}4.3. O km acima da franquia é cobrado pelos valores do item 10, na fatura seguinte à apuração. Km não usado não acumula e não gera crédito.{{/cumulativa}}
 
-4.4. A LOCATÁRIA pode contratar pacotes de km adicional pelos valores do Anexo II, pedidos pelo Sistema F2 Conect.
+4.4. A LOCATÁRIA pode contratar pacotes de km adicional pelos valores do Anexo II, pedidos por e-mail ou WhatsApp.
 
 4.5. O primeiro e o último mês são cobrados proporcionalmente aos dias de locação.
 
@@ -2105,13 +2115,13 @@ Este quadro reúne os dados deste contrato. As Condições Gerais (Parte B) se r
 
 ### CLÁUSULA 7 – USO DO VEÍCULO
 
-7.1. Só podem dirigir Condutores com CNH válida e categoria adequada, cadastrados no Sistema F2 Conect antes do primeiro uso. A LOCATÁRIA responde pelos atos dos Condutores como se fossem seus.
+7.1. Só podem dirigir Condutores com CNH válida e categoria adequada, informados por escrito à LOCADORA (nome, CPF e CNH) antes do primeiro uso. A LOCATÁRIA responde pelos atos dos Condutores como se fossem seus.
 
-7.2. Cada uso deve ser registrado no Sistema F2 Conect (check-in e checkout, com km). O uso sem registro é de responsabilidade da LOCATÁRIA.
+7.2. A LOCATÁRIA mantém controle de quem usa o veículo em cada dia e horário e o apresenta à LOCADORA quando solicitado, especialmente em multas e sinistros. O uso sem esse controle é de responsabilidade da LOCATÁRIA.
 
 7.3. É proibido: sublocar, emprestar ou ceder o veículo; usá-lo em transporte remunerado de passageiros (aplicativos) ou com carga acima da capacidade; participar de competições, rachas ou aulas de direção; rebocar outros veículos; dirigir sob efeito de álcool ou drogas; trafegar fora de estrada ou em vias sem condições; transportar produtos perigosos ou ilícitos; alterar o veículo, instalar acessórios ou mexer no rastreador.
 
-7.4. Sair da região do item 5 exige aviso prévio pelo Sistema F2 Conect; sair do país é proibido.
+7.4. Sair da região do item 5 exige aviso prévio por escrito (e-mail ou WhatsApp); sair do país é proibido.
 
 7.5. O veículo deve ficar trancado e em local seguro, sem documentos ou chaves dentro.
 
@@ -2142,9 +2152,9 @@ Este quadro reúne os dados deste contrato. As Condições Gerais (Parte B) se r
 
 ### CLÁUSULA 9 – VISTORIAS E REGISTROS
 
-9.1. Na entrega e na devolução é feita vistoria com fotos (Anexo I). A LOCATÁRIA disponibiliza o veículo para vistorias periódicas, com aviso de 48 horas.
+9.1. Na entrega e na devolução é feita vistoria com registro do odômetro, do combustível, dos itens conferidos e fotos do veículo (Anexo I), assinada pelas partes. A LOCATÁRIA disponibiliza o veículo para vistorias periódicas, com aviso de 48 horas.
 
-9.2. Os registros do Sistema F2 Conect, com data, hora, fotos e localização, valem como prova das ocorrências deste contrato.
+9.2. As vistorias, as fotos e as leituras de odômetro registradas pela LOCADORA, com data e hora, e as mensagens trocadas entre as partes valem como prova das ocorrências deste contrato.
 
 9.3. A LOCATÁRIA pode contestar uma vistoria em até 5 dias úteis; depois disso ela é considerada aceita.
 
@@ -2174,21 +2184,19 @@ Este quadro reúne os dados deste contrato. As Condições Gerais (Parte B) se r
 
 12.1. Multas, pontos e infrações durante a locação são de responsabilidade da LOCATÁRIA e do Condutor.
 
-12.2. A LOCADORA informa a notificação pelo Sistema F2 Conect, e a LOCATÁRIA indica o Condutor em até 5 dias úteis, com cópia da CNH e assinatura do Condutor, para que a indicação seja feita dentro do prazo legal de 30 dias.
+12.2. A LOCADORA envia a notificação por e-mail ou WhatsApp, e a LOCATÁRIA indica o Condutor em até 5 dias úteis, com cópia da CNH e assinatura do Condutor, para que a indicação seja feita dentro do prazo legal de 30 dias.
 
-12.3. Sem indicação no prazo, a LOCADORA pode indicar o Condutor registrado no Sistema F2 Conect naquele horário. Se ninguém puder ser indicado, a multa adicional por não indicação aplicada à LOCADORA é paga pela LOCATÁRIA.
+12.3. Sem indicação no prazo, a LOCADORA pode indicar o Condutor que constar do controle de uso da LOCATÁRIA (cláusula 7.2). Se ninguém puder ser indicado, a multa adicional por não indicação aplicada à LOCADORA é paga pela LOCATÁRIA.
 
 12.4. Multas e a taxa do item 17 são cobradas na fatura seguinte. Em apreensão ou remoção, guincho, pátio e taxas são da LOCATÁRIA, e o aluguel continua devido.
 
 12.5. Nos planos com prazo de 180 dias ou mais, a LOCATÁRIA concorda em ser registrada no Detran como possuidora do veículo, quando possível, para receber as notificações diretamente.
 
-### CLÁUSULA 13 – RASTREAMENTO, SISTEMA E DADOS
+### CLÁUSULA 13 – RASTREAMENTO E DADOS
 
 13.1. O veículo tem rastreador. A LOCATÁRIA autoriza a coleta de localização, quilometragem e eventos de condução para segurança, apuração de km, recuperação em roubo e execução deste contrato, e se compromete a informar seus Condutores, conforme a LGPD.
 
-13.2. A LOCATÁRIA recebe acesso ao Sistema F2 Conect para registrar uso, km, abastecimentos, vistorias e chamados e acompanhar faturas e franquia. Ela é responsável pelos acessos que criar para seus Condutores.
-
-13.3. O bloqueio remoto só é usado em roubo, furto, não devolução ou inadimplência após notificação, sempre com o veículo parado.
+13.2. O bloqueio remoto só é usado em roubo, furto, não devolução ou inadimplência após notificação, sempre com o veículo parado.
 
 ### CLÁUSULA 14 – DEVOLUÇÃO E NÃO DEVOLUÇÃO
 
@@ -2208,7 +2216,7 @@ Este quadro reúne os dados deste contrato. As Condições Gerais (Parte B) se r
 
 15.2. Nos planos com prazo, a LOCATÁRIA pode encerrar antes do término com aviso escrito de 30 dias, pagando a multa rescisória do item 16, proporcional ao tempo que falta.
 
-15.3. A LOCADORA pode encerrar imediatamente, com a multa do item 16 devida pela LOCATÁRIA, em caso de: atraso acima de 30 dias; uso proibido (cláusula 7.3); Condutor não cadastrado; sublocação; adulteração de odômetro ou rastreador; ou falência ou recuperação judicial da LOCATÁRIA.
+15.3. A LOCADORA pode encerrar imediatamente, com a multa do item 16 devida pela LOCATÁRIA, em caso de: atraso acima de 30 dias; uso proibido (cláusula 7.3); Condutor não informado ou sem CNH válida; sublocação; adulteração de odômetro ou rastreador; ou falência ou recuperação judicial da LOCATÁRIA.
 
 15.4. Se a LOCADORA encerrar um plano com prazo antes do término, sem os motivos da cláusula 15.3, ela oferece veículo equivalente ou libera a LOCATÁRIA dos aluguéis restantes, sem multa para nenhuma parte.
 
@@ -2222,7 +2230,7 @@ Este quadro reúne os dados deste contrato. As Condições Gerais (Parte B) se r
 
 ### CLÁUSULA 17 – COMUNICAÇÕES
 
-17.1. Valem como aviso entre as partes as mensagens pelo Sistema F2 Conect, pelo e-mail e pelo WhatsApp do item 3. A LOCATÁRIA mantém esses contatos atualizados.
+17.1. Valem como aviso entre as partes as mensagens pelo e-mail e pelo WhatsApp do item 3. A LOCATÁRIA mantém esses contatos atualizados.
 
 ### CLÁUSULA 18 – DISPOSIÇÕES GERAIS
 
@@ -2258,10 +2266,21 @@ Testemunhas:
 
 ### ANEXOS
 
-- **Anexo I – Laudo de Vistoria de Entrega:** gerado pelo Sistema F2 Conect, com fotos, km, combustível e itens.
+- **Anexo I – Laudo de Vistoria de Entrega:** a seguir, com odômetro, combustível, itens conferidos e fotos do veículo.
 - **Anexo II – Pacotes de km adicional:** {{pacotes}}
 - **Anexo III – Resumo do seguro:** seguradora, apólice, coberturas, franquia e telefone da assistência 24 horas.
-- **Anexo IV – Tabela de avarias:** valores de referência para riscos, amassados, para-choque, retrovisor, farol, vidros, pneu, chave reserva e documento.`;
+- **Anexo IV – Tabela de avarias:** valores de referência para riscos, amassados, para-choque, retrovisor, farol, vidros, pneu, chave reserva e documento.
+
+## ANEXO I – LAUDO DE VISTORIA DE ENTREGA
+
+{{vistoriaEntrega}}
+
+A LOCATÁRIA declara que recebeu o veículo nas condições acima.
+
+LOCATÁRIA: ______________________________
+
+LOCADORA: ______________________________
+`;
 
 const ctModelo = () => { const m=G('config','contrato_modelo'); return (m && m.texto) ? m.texto : CT_MODELO_PADRAO; };
 /* --- números por extenso, datas e valores --- */
@@ -2293,9 +2312,29 @@ function ctValores(c){
     indice:c.reajIndice||'', caucao:m(c.caucao), despesas:c.despesasLocataria||despPadrao, seguradora:c.seguradora||'', franquiaSinistro:m(c.franquiaSinistro), franquiaRoubo:m(c.franquiaRoubo), coberturaTerceiros:m(c.coberturaTerceiros),
     multaRescisoria:mod==='mensal'?'não se aplica (plano mensal)':(c.multaRescisoria||''), multaAtraso:pc(c.multaAtraso??2), taxaMulta:m(c.taxaMulta), combustivelPct:pc(c.combustivelPct), limpeza:m(c.limpeza), atrasoDevolucao:c.atrasoDevolucao||'',
     limiteEmergencia:m(c.limiteEmergencia??cfg().limiteEmergencia), carencia:String(c.carencia??''), localDevolucao:c.localDevolucao||'', condicoes:c.condicoes||'Não há.', pacotes:pac||'Não há pacotes oferecidos neste contrato.',
-    dataAssinatura:dataExtenso(c.dataAssinatura||c.inicio)};
+    dataAssinatura:dataExtenso(c.dataAssinatura||c.inicio), vistoriaEntrega:ctVistoriaMD(c)};
   const flags={cumulativa:cumul, mensal:mod==='mensal', comPrazo:mod!=='mensal'};
   return {val,flags};
+}
+function vistoriaDoContrato(c){
+  const temVt=c.vtData||c.vtCombustivel||c.vtAvarias||(c.vtFotos||[]).length||Object.keys(c.vtChecklist||{}).length;
+  if(temVt) return {data:c.vtData||c.inicio,km:c.kmInicial,comb:c.vtCombustivel,ck:c.vtChecklist||{},av:c.vtAvarias,fotos:c.vtFotos||[]};
+  const x=L('vistorias').filter(x=>x.tipo==='entrega'&&x.contratoId===c.id).sort((a,b)=>(a.data||'')<(b.data||'')?1:-1)[0];
+  return x?{data:(x.data||'').slice(0,10),km:x.km,comb:x.combustivel,ck:x.checklist||{},av:x.avarias,fotos:x.fotos||[]}:null;
+}
+function ctVistoriaMD(c){
+  const vt=vistoriaDoContrato(c); const v=G('veiculos',c.veiculoId)||{}; const o=[];
+  o.push('| Nº | Item | Registro |','|---|---|---|');
+  o.push(`| 1 | Data da vistoria | ${vt?dbr(vt.data):'____/____/________'} |`);
+  o.push(`| 2 | Veículo | ${[v.marca,v.modelo,v.versao].filter(Boolean).join(' ')} · placa ${(v.placa||'').toUpperCase()} |`);
+  o.push(`| 3 | Odômetro | ${vt&&+vt.km?kmf(+vt.km):'________________ km'} |`);
+  o.push(`| 4 | Combustível | ${vt&&vt.comb?COMB_LBL[vt.comb]||vt.comb:'( ) reserva  ( ) 1/4  ( ) 1/2  ( ) 3/4  ( ) cheio'} |`);
+  o.push('','| Nº | Item conferido | Situação |','|---|---|---|');
+  VIST_ITENS.forEach((it,k)=>o.push(`| ${k+1} | ${it} | ${vt?(vt.ck[it]?'**Com avaria ou pendência**':'OK'):'( ) OK   ( ) Avaria'} |`));
+  o.push('',`**Avarias e observações:** ${vt?(String(vt.av||'').replace(/\s*\n\s*/g,' ')||'nenhuma.'):'______________________________________________________________'}`);
+  if(vt&&vt.fotos.length){ o.push('',`**Fotos do veículo na entrega (${vt.fotos.length}):**`); vt.fotos.forEach((f,k)=>o.push(`[[FOTO ${f.id}|Foto ${k+1}]]`)); }
+  else o.push('','**Fotos do veículo:** tiradas na entrega (frente, traseira, laterais, painel com odômetro e avarias) e enviadas à LOCATÁRIA por e-mail ou WhatsApp, fazendo parte deste laudo.');
+  return o.join('\n');
 }
 function modalidadeDe(c){ if(c.modalidade) return c.modalidade; const p=+c.prazoMeses||0; return !c.fim&&!p?'mensal':p===6?'semestral':p===12?'anual':p===24?'24m':''; }
 /* Preenche o modelo. Campos vazios viram ⟦Nome do campo⟧, destacados no documento. */
@@ -2311,20 +2350,23 @@ function ctBlocos(texto){
   for(const raw of texto.split('\n')){ const l=raw.replace(/\s+$/,'');
     if(/^\|.*\|$/.test(l.trim())){ if(/^\|[\s|:-]+\|$/.test(l.trim())) continue; const cells=l.trim().slice(1,-1).split('|').map(s=>s.trim()); if(!tab){ tab={t:'table',rows:[]}; out.push(tab); } tab.rows.push(cells); continue; }
     tab=null; if(!l.trim()) continue;
-    let m; if((m=l.match(/^(#{1,3})\s+(.*)/))) out.push({t:'h'+m[1].length,x:m[2]}); else if((m=l.match(/^\s*[-•]\s+(.*)/))) out.push({t:'li',x:m[1]}); else out.push({t:'p',x:l.trim()}); }
+    let m; if((m=l.trim().match(/^\[\[FOTO ([^|\]]+)\|?([^\]]*)\]\]$/))){ out.push({t:'img',id:m[1].trim(),cap:m[2]||''}); continue; }
+    if((m=l.match(/^(#{1,3})\s+(.*)/))) out.push({t:'h'+m[1].length,x:m[2]}); else if((m=l.match(/^\s*[-•]\s+(.*)/))) out.push({t:'li',x:m[1]}); else out.push({t:'p',x:l.trim()}); }
   return out;
 }
 /* Trechos de uma linha: negrito (**…**) e campo vazio (⟦…⟧) */
 function ctRuns(s){ const r=[]; let b=false; for(const part of s.split('**')){ if(part){ for(const q of part.split(/(⟦[^⟧]*⟧)/)){ if(!q) continue; const falta=q.startsWith('⟦'); r.push({x:falta?'['+q.slice(1,-1)+']':q,b,falta}); } } b=!b; } return r; }
-function ctHTML(blocos){
+function ctHTML(blocos, imgs){
   const run=s=>ctRuns(s).map(r=>{ let h=esc(r.x); if(r.b) h='<b>'+h+'</b>'; if(r.falta) h='<mark>'+h+'</mark>'; return h; }).join('');
   let h=''; let lista=false;
-  for(const b of blocos){ if(b.t!=='li'&&lista){ h+='</ul>'; lista=false; }
+  let fotos=false;
+  for(const b of blocos){ if(b.t!=='li'&&lista){ h+='</ul>'; lista=false; } if(b.t!=='img'&&fotos){ h+='</div>'; fotos=false; }
+    if(b.t==='img'){ if(!fotos){ h+='<div class="ctfotos">'; fotos=true; } const im=imgs&&imgs[b.id]; h+=`<figure style="display:inline-block;width:48%;margin:0 1% 10px;vertical-align:top;page-break-inside:avoid">${im?`<img src="${im.url}" style="width:100%;border:1px solid #bbb" alt="${esc(b.cap)}">`:`<div style="border:1px dashed #bbb;padding:30px 6px;text-align:center;font-size:9pt;color:#777">${imgs?'foto não carregada':'carregando foto…'}</div>`}<figcaption style="font-size:8.5pt;color:#555;text-align:center">${esc(b.cap)}</figcaption></figure>`; continue; }
     if(b.t==='h1') h+=`<h1>${run(b.x)}</h1>`; else if(b.t==='h2') h+=`<h2>${run(b.x)}</h2>`; else if(b.t==='h3') h+=`<h3>${run(b.x)}</h3>`;
     else if(b.t==='li'){ if(!lista){ h+='<ul>'; lista=true; } h+=`<li>${run(b.x)}</li>`; }
     else if(b.t==='table') h+='<table>'+b.rows.map((r,i)=>'<tr>'+r.map(c=>i===0?`<th>${run(c)}</th>`:`<td>${run(c)}</td>`).join('')+'</tr>').join('')+'</table>';
     else h+=`<p>${run(b.x)}</p>`; }
-  if(lista) h+='</ul>'; return h;
+  if(lista) h+='</ul>'; if(fotos) h+='</div>'; return h;
 }
 const CT_CSS=`body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;line-height:1.45;color:#111;margin:0}
 .doc{max-width:17cm;margin:0 auto;padding:1.6cm 0}
@@ -2336,18 +2378,26 @@ mark{background:#fff3a0}
 @page{size:A4;margin:2cm 2.2cm}@media print{.doc{padding:0;max-width:none}}`;
 /* --- Word (.docx) gerado no próprio navegador --- */
 const xe = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-function ctDocxXML(blocos){
+function ctDocxXML(blocos, imgs, midias){ midias=midias||[];
   const runs=(s,base)=>ctRuns(s).map(r=>`<w:r><w:rPr>${r.b||base?'<w:b/>':''}${r.falta?'<w:highlight w:val="yellow"/>':''}</w:rPr><w:t xml:space="preserve">${xe(r.x)}</w:t></w:r>`).join('');
   const par=(s,st,extra)=>`<w:p><w:pPr>${st?`<w:pStyle w:val="${st}"/>`:''}${extra||''}</w:pPr>${runs(s)}</w:p>`;
-  let body='';
+  let body=''; let grupo=[];
+  const foto=(b)=>{ const im=imgs&&imgs[b.id]; if(!im) return `<w:p><w:pPr><w:pStyle w:val="Celula"/></w:pPr>${runs('['+b.cap+': foto não carregada]')}</w:p>`;
+    const n=midias.length+1; midias.push({rid:'rIdFoto'+n,nome:'foto'+n+'.jpeg',bytes:im.bytes}); let cx=2700000, cy=Math.round(cx*im.h/im.w); if(cy>3400000){ cx=Math.round(cx*3400000/cy); cy=3400000; }
+    return `<w:p><w:pPr><w:pStyle w:val="Celula"/><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${n}" name="Foto ${n}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${n}" name="foto${n}.jpeg"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdFoto${n}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Celula"/><w:jc w:val="center"/></w:pPr>${runs(b.cap)}</w:p>`; };
+  const fechaGrupo=()=>{ if(!grupo.length) return; let t=`<w:tbl><w:tblPr><w:tblW w:w="9070" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders>${['top','left','bottom','right','insideH','insideV'].map(x=>`<w:${x} w:val="nil"/>`).join('')}</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="4535"/><w:gridCol w:w="4535"/></w:tblGrid>`;
+    for(let k=0;k<grupo.length;k+=2){ t+='<w:tr><w:trPr><w:cantSplit/></w:trPr>'+[grupo[k],grupo[k+1]].map(b=>`<w:tc><w:tcPr><w:tcW w:w="4535" w:type="dxa"/></w:tcPr>${b?foto(b):'<w:p/>'}</w:tc>`).join('')+'</w:tr>'; }
+    body+=t+`</w:tbl>${par('','Normal')}`; grupo=[]; };
   for(const b of blocos){
+    if(b.t==='img'){ grupo.push(b); continue; } fechaGrupo();
     if(b.t==='h1') body+=par(b.x,'Titulo'); else if(b.t==='h2') body+=par(b.x,'Secao'); else if(b.t==='h3') body+=par(b.x,'Clausula');
     else if(b.t==='li') body+=par(b.x,'Lista','<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>');
     else if(b.t==='table'){ const n=Math.max(...b.rows.map(r=>r.length)); const W=n===3?[650,2350,6070]:Array(n).fill(Math.floor(9070/n));
       body+=`<w:tbl><w:tblPr><w:tblW w:w="9070" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders>${['top','left','bottom','right','insideH','insideV'].map(x=>`<w:${x} w:val="single" w:sz="4" w:space="0" w:color="999999"/>`).join('')}</w:tblBorders><w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="80" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${W.map(w=>`<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`+
         b.rows.map((r,i)=>`<w:tr>${i===0?'<w:trPr><w:tblHeader/></w:trPr>':''}${W.map((w,j)=>`<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${i===0?'<w:shd w:val="clear" w:color="auto" w:fill="E8E8E8"/>':''}</w:tcPr><w:p><w:pPr><w:pStyle w:val="Celula"/></w:pPr>${runs(r[j]||'',i===0)}</w:p></w:tc>`).join('')}</w:tr>`).join('')+`</w:tbl>${par('','Normal')}`; }
     else body+=par(b.x,'Normal'); }
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${body}<w:sectPr><w:footerReference w:type="default" r:id="rIdFooter"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1247" w:right="1417" w:bottom="1134" w:left="1417" w:header="709" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  fechaGrupo();
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body}<w:sectPr><w:footerReference w:type="default" r:id="rIdFooter"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1247" w:right="1417" w:bottom="1134" w:left="1417" w:header="709" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>`;
 }
 const CT_STYLES=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Arial" w:cs="Arial"/><w:sz w:val="21"/><w:szCs w:val="21"/><w:lang w:val="pt-BR"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
 <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr><w:jc w:val="both"/></w:pPr></w:style>
@@ -2366,7 +2416,7 @@ function crc32(b){ let c=0xFFFFFFFF; for(let i=0;i<b.length;i++) c=CRC_T[(c^b[i]
 function zipStore(arquivos){
   const enc=new TextEncoder(); const partes=[], central=[]; let off=0; const d=new Date();
   const tm=((d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1))&0xFFFF, dt=(((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate())&0xFFFF;
-  for(const [nome,conteudo] of arquivos){ const nb=enc.encode(nome), data=enc.encode(conteudo), crc=crc32(data);
+  for(const [nome,conteudo] of arquivos){ const nb=enc.encode(nome), data=conteudo instanceof Uint8Array?conteudo:enc.encode(conteudo), crc=crc32(data);
     const h=new DataView(new ArrayBuffer(30)); h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(6,0x0800,true); h.setUint16(8,0,true); h.setUint16(10,tm,true); h.setUint16(12,dt,true); h.setUint32(14,crc,true); h.setUint32(18,data.length,true); h.setUint32(22,data.length,true); h.setUint16(26,nb.length,true); h.setUint16(28,0,true);
     partes.push(new Uint8Array(h.buffer),nb,data);
     const c=new DataView(new ArrayBuffer(46)); c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true); c.setUint16(8,0x0800,true); c.setUint16(10,0,true); c.setUint16(12,tm,true); c.setUint16(14,dt,true); c.setUint32(16,crc,true); c.setUint32(20,data.length,true); c.setUint32(24,data.length,true); c.setUint16(28,nb.length,true); c.setUint16(30,0,true); c.setUint16(32,0,true); c.setUint16(34,0,true); c.setUint16(36,0,true); c.setUint32(38,0,true); c.setUint32(42,off,true);
@@ -2374,15 +2424,22 @@ function zipStore(arquivos){
   const tamC=central.reduce((s,x)=>s+x.length,0); const e=new DataView(new ArrayBuffer(22)); e.setUint32(0,0x06054b50,true); e.setUint16(8,arquivos.length,true); e.setUint16(10,arquivos.length,true); e.setUint32(12,tamC,true); e.setUint32(16,off,true);
   return new Blob([...partes,...central,new Uint8Array(e.buffer)],{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
 }
-function ctDocx(blocos, numero){
-  const W='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+function ctDocx(blocos, numero, imgs){
+  const W='http://schemas.openxmlformats.org/officeDocument/2006/relationships'; const midias=[]; const docXML=ctDocxXML(blocos,imgs,midias);
   return zipStore([
-    ['[Content_Types].xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>'],
+    ['[Content_Types].xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>'],
     ['_rels/.rels',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${W}/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`],
     ['docProps/core.xml',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Contrato de locação de veículo ${xe(numero||'')}</dc:title><dc:creator>F2 Carloc Ltda</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString().slice(0,19)}Z</dcterms:created></cp:coreProperties>`],
-    ['word/_rels/document.xml.rels',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="${W}/styles" Target="styles.xml"/><Relationship Id="rIdNum" Type="${W}/numbering" Target="numbering.xml"/><Relationship Id="rIdFooter" Type="${W}/footer" Target="footer1.xml"/></Relationships>`],
-    ['word/document.xml',ctDocxXML(blocos)],['word/styles.xml',CT_STYLES],['word/numbering.xml',CT_NUMBERING],['word/footer1.xml',ctFooterXML(numero)]]);
+    ['word/_rels/document.xml.rels',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="${W}/styles" Target="styles.xml"/><Relationship Id="rIdNum" Type="${W}/numbering" Target="numbering.xml"/><Relationship Id="rIdFooter" Type="${W}/footer" Target="footer1.xml"/>${midias.map(m=>`<Relationship Id="${m.rid}" Type="${W}/image" Target="media/${m.nome}"/>`).join('')}</Relationships>`],
+    ['word/document.xml',docXML],['word/styles.xml',CT_STYLES],['word/numbering.xml',CT_NUMBERING],['word/footer1.xml',ctFooterXML(numero)],...midias.map(m=>['word/media/'+m.nome,m.bytes])]);
 }
+/* --- fotos da vistoria: baixa do armazenamento e reduz para caber no documento --- */
+async function ctReduzir(blob){ const url=URL.createObjectURL(blob); try{ const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=url; });
+  const k=Math.min(1,1400/Math.max(img.naturalWidth,img.naturalHeight)); const w=Math.max(1,Math.round(img.naturalWidth*k)), h=Math.max(1,Math.round(img.naturalHeight*k));
+  const cv=document.createElement('canvas'); cv.width=w; cv.height=h; const cx=cv.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,w,h); cx.drawImage(img,0,0,w,h);
+  const durl=cv.toDataURL('image/jpeg',0.82); const bin=atob(durl.split(',')[1]); const bytes=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return {url:durl,bytes,w,h}; } finally{ URL.revokeObjectURL(url); } }
+async function ctFotos(blocos){ const out={}; for(const id of [...new Set(blocos.filter(b=>b.t==='img').map(b=>b.id))]){ try{ const {data,error}=await Supa.sb.storage.from('anexos').download(id); if(error||!data) throw error||'sem arquivo'; out[id]=await ctReduzir(data); }catch(e){ console.warn('foto',id,e); out[id]=null; } } return out; }
 /* --- tela do documento: conferir, baixar Word, imprimir/PDF --- */
 function ctNomeArquivo(c,ext){ const v=G('veiculos',c.veiculoId)||{}; const cli=G('clientes',c.clienteId)||{}; return `Contrato ${c.numero||''} ${(v.placa||'').toUpperCase()} ${(cli.nome||'').slice(0,40)}`.replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,' ').trim()+'.'+ext; }
 function ctGerar(id){ const c=G('contratos',id); if(!c) throw 'Contrato não encontrado.'; const {val,flags}=ctValores(c); const r=ctPreencher(ctModelo(),val,flags); return {c,...r,blocos:ctBlocos(r.texto)}; }
@@ -2390,14 +2447,16 @@ function abrirDocContrato(id){
   const g=ctGerar(id); const dlg=$('#dlg');
   dlg.innerHTML=`<div class="dbody"><div class="dh"><h2>Contrato ${esc(g.c.numero||'')} · ${esc(PL(g.c.veiculoId))} · ${esc(nomeCliente(g.c.clienteId))}</h2><button type="button" class="btn ghost" data-close>Fechar</button></div>
     <div class="dc">${g.faltam.length?`<div class="note" style="margin-bottom:10px"><b>Faltam ${g.faltam.length} dado(s)</b>, destacados em amarelo: ${g.faltam.map(esc).join(', ')}. Complete em "Editar dados" (os dados do cliente e do carro ficam nos cadastros deles) ou baixe assim e complete no Word.</div>`:`<div class="note i" style="margin-bottom:10px">Todos os campos obrigatórios estão preenchidos.${g.opcionais.length?' Em amarelo, campos opcionais vazios: '+g.opcionais.map(esc).join(', ')+'.':''}</div>`}
+    ${(()=>{ const vt=vistoriaDoContrato(g.c); return vt?`<div class="note i" style="margin-bottom:10px">Anexo I: vistoria de entrega de ${dbr(vt.data)}${+vt.km?' · odômetro '+kmf(+vt.km):''} · ${vt.fotos.length} foto(s).</div>`:`<div class="note" style="margin-bottom:10px">Sem vistoria de entrega: o Anexo I sai em branco para preencher à mão. Para preencher pelo sistema, clique em <b>Editar dados</b> → Vistoria de entrega (odômetro, combustível, itens e fotos).</div>`; })()}
     <div class="ctprev">${ctHTML(g.blocos)}</div></div>
     <div class="df" style="flex-wrap:wrap"><button type="button" class="btn" data-ctedit style="margin-right:auto">Editar dados</button>${g.c.pdf?`<button type="button" class="btn" data-file="${esc(g.c.pdf)}">Ver assinado</button>`:''}<button type="button" class="btn" data-ctprint>Imprimir / salvar PDF</button><button type="button" class="btn pri" data-ctdocx>Baixar Word (.docx)</button></div></div>`;
   dlg.querySelector('[data-close]').onclick=()=>dlg.close();
   dlg.querySelector('[data-ctedit]').onclick=()=>{ dlg.close(); openForm('contratos',id); };
   const marca=async tipo=>{ try{ await salvar('contratos',id,{documentoGeradoEm:new Date().toISOString(),documentoGeradoPor:S.uid},'gerou documento do contrato ('+tipo+')'); }catch(e){} };
-  dlg.querySelector('[data-ctdocx]').onclick=()=>{ baixarArquivo(ctNomeArquivo(g.c,'docx'), ctDocx(g.blocos,g.c.numero)); marca('Word'); toast('Contrato baixado. Envie ao cliente para assinar e depois anexe o assinado no contrato.'); };
-  dlg.querySelector('[data-ctprint]').onclick=()=>{ const w=window.open('','_blank'); if(!w){ toast('O navegador bloqueou a janela. Libere pop-ups para este site.'); return; }
-    w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(ctNomeArquivo(g.c,'pdf').replace(/\.pdf$/,''))}</title><style>${CT_CSS}</style></head><body><div class="doc">${ctHTML(g.blocos)}</div><script>setTimeout(function(){window.print()},300)<\/script></body></html>`); w.document.close(); marca('PDF'); };
+  const temFotos=g.blocos.some(b=>b.t==='img'); let imgs=null; const pronto=temFotos?ctFotos(g.blocos).then(x=>{ imgs=x; const pv=dlg.querySelector('.ctprev'); if(pv) pv.innerHTML=ctHTML(g.blocos,imgs); return x; }):Promise.resolve(null);
+  dlg.querySelector('[data-ctdocx]').onclick=async()=>{ const bt=dlg.querySelector('[data-ctdocx]'); bt.disabled=true; bt.textContent='Preparando…'; await pronto; bt.disabled=false; bt.textContent='Baixar Word (.docx)'; baixarArquivo(ctNomeArquivo(g.c,'docx'), ctDocx(g.blocos,g.c.numero,imgs)); marca('Word'); toast('Contrato baixado. Envie ao cliente para assinar e depois anexe o assinado no contrato.'); };
+  dlg.querySelector('[data-ctprint]').onclick=async()=>{ const w=window.open('','_blank'); if(!w){ toast('O navegador bloqueou a janela. Libere pop-ups para este site.'); return; } w.document.write('<p style="font-family:Arial">Preparando o documento…</p>'); await pronto; w.document.open();
+    w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(ctNomeArquivo(g.c,'pdf').replace(/\.pdf$/,''))}</title><style>${CT_CSS}</style></head><body><div class="doc">${ctHTML(g.blocos,imgs)}</div><script>setTimeout(function(){window.print()},300)<\/script></body></html>`); w.document.close(); marca('PDF'); };
   if(dlg.open) dlg.close(); dlgLargo(dlg); dlg.showModal();
 }
 /* --- modelo do contrato (texto) editável --- */
@@ -2421,7 +2480,7 @@ function vContratos(){
   const P=cfg(); const m=G('config','contrato_modelo'); const semPdf=at.filter(c=>!c.pdf).length;
   const cols=[{h:'Nº',f:c=>`<span class="mono">${esc(c.numero||'—')}</span>`},{h:'Veículo',f:c=>vCell(c.veiculoId)},{h:'Cliente',f:c=>esc(nomeCliente(c.clienteId))},{h:'Plano',f:c=>esc(({mensal:'Mensal',semestral:'Semestral',anual:'Anual','24m':'24 meses'})[modalidadeDe(c)]||(c.prazoMeses?c.prazoMeses+' meses':'—'))},
     {h:'Vigência',f:c=>`${dbr(c.inicio)} – ${c.fim?dbr(c.fim):'indeterminado'}`},{h:'Aluguel',n:1,f:c=>money(c.aluguel)},{h:'Franquia',f:c=>c.kmContratado?`${nf(c.kmContratado)} km ${c.periodicidade==='total'?'no total':c.periodicidade==='cumulativa'?'/mês cumulativa':'/mês'}`:'Sem limite'},
-    {h:'Assinado',f:c=>c.pdf?arq(c.pdf):'<span class="pill p-warn">Falta anexar</span>'},{h:'',f:c=>`<button class="btn sm pri" data-act="docContrato" data-id="${c.id}" data-stop>Documento</button>`}];
+    {h:'Vistoria',f:c=>{ const vt=vistoriaDoContrato(c); return vt?`<span class="pill p-ok">${vt.fotos.length} foto(s)</span>`:'<span class="pill p-warn">Falta</span>'; }},{h:'Assinado',f:c=>c.pdf?arq(c.pdf):'<span class="pill p-warn">Falta anexar</span>'},{h:'',f:c=>`<button class="btn sm pri" data-act="docContrato" data-id="${c.id}" data-stop>Documento</button>`}];
   return head('Contratos','Cadastro dos contratos, documento para assinatura e modelos de plano.',`${B('Modelo do contrato','modeloContrato')}${B('Novo contrato','new','data-k="contratos"',1)}`)+
   `<div class="stack"><div class="kpis">${kpi('Contratos ativos',at.length,'')}${kpi('Falta anexar assinado',semPdf,semPdf?'ativos sem o PDF assinado':'tudo em dia')}${kpi('Modelo do contrato',m&&m.texto?'Personalizado':'Padrão',m&&m.atualizadoEm?'alterado em '+dbr(locISO(m.atualizadoEm)):'minuta v3')}</div>
   <div class="note i">Para gerar o contrato: cadastre (ou abra) o contrato, clique em <b>Documento</b>, confira e baixe em Word ou PDF. Depois de assinado, anexe o PDF em "Editar" → "Contrato assinado".</div>
