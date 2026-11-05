@@ -12,6 +12,16 @@ Pasta pronta para publicar. O sistema é um site estático (Vercel) que guarda t
 | `manifest.webmanifest`, `icon.svg` | Permitem instalar o site como app no celular |
 | `vercel.json` | Cabeçalhos de segurança e cache para o Vercel |
 
+## Versão 11: limpeza e correções
+
+- Painel: a frota mostra quantos carros há em cada situação (a soma bate com o total). "A receber" agora mostra "—" quando os contratos são mensais sem prazo e diz o valor por mês. "Capital na frota" avisa quando falta o preço de compra dos carros. O mês mostra "Faturado" e o aluguel previsto lado a lado.
+- Pendências novas: carro "em preparação", "à venda" ou "vendido" que ainda tem contrato ativo; e fatura do mês anterior não emitida.
+- Rentabilidade: não aponta "melhor" e "pior" carro enquanto não houver faturas ou custos lançados.
+- Menu: "Contratos a receber" passou a se chamar "Faturas".
+- Venda de carro: se o carro tiver contrato ativo, o contrato é encerrado automaticamente na data da venda (antes dava erro).
+- Campos de valor e de km aceitam o jeito brasileiro: 54.190 ou 54.190,00 viram cinquenta e quatro mil. Antes, digitar 54.190 gravava R$ 54,19.
+- Configurações em 5 abas, com textos simples: Usuários, Avisos e prazos, Manutenção preventiva, Quem paga o quê e Backup. Saíram as informações técnicas (endereço do banco, importador antigo).
+
 ## 1. Supabase (uma vez)
 
 1. Crie uma conta em supabase.com e um projeto novo. Região: **South America (São Paulo)**.

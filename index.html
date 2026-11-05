@@ -448,6 +448,10 @@ function condutorSugerido(vid, dataHora){
 function alertas(){
   const A=[]; const P=cfg(); const h=hoje(); const now=agora();
   const add=(sev,titulo,detalhe,go)=>A.push({sev,titulo,detalhe,go});
+  for(const c of L('contratos').filter(c=>contratoAtivo(c))){ const v0=G('veiculos',c.veiculoId);
+    if(v0 && ['a_venda','preparacao','vendido'].includes(v0.statusManual)) add('w',`${(v0.placa||'').toUpperCase()} está como "${VSTATUS[v0.statusManual]}", mas tem contrato ativo`,`Contrato ${c.numero||''} com ${nomeCliente(c.clienteId)}. Encerre o contrato ou mude a situação do carro para Automática.`,{view:'veiculo',id:c.veiculoId,tab:'contrato'});
+    const compAnt=mesMais(mesAtual(),-1); if(c.inicio<=compAnt+'-31' && !L('faturas').some(f=>f.contratoId===c.id && f.competencia===compAnt && f.status!=='cancelada')) add('i',`Fatura de ${mesbr(compAnt)} não emitida · ${(v0&&v0.placa||'').toUpperCase()}`,`${nomeCliente(c.clienteId)} · aluguel ${money(c.aluguel)}`,{view:'receber'});
+  }
   for(const c of L('contratos').filter(c=>contratoAtivo(c))){
     const v=G('veiculos',c.veiculoId); const pl=v?(v.placa||'').toUpperCase():'?';
     if(c.fim){ const d=diff(h,c.fim); if(d<=P.diasAvisoVenc) add(d<=7?'b':'w',`Contrato de ${pl} vence em ${d} dia${d===1?'':'s'}`,`${nomeCliente(c.clienteId)} · término ${dbr(c.fim)}`,{view:'veiculo',id:c.veiculoId,tab:'contrato'}); }
@@ -480,7 +484,7 @@ function alertas(){
   for(const k of L('pacotes').filter(k=>k.status==='solicitado')){ const c=G('contratos',k.contratoId); add('i','Pedido de pacote de km',`${nf(k.km)} km por ${money(k.preco)} · ${c?nomeCliente(c.clienteId):''}`,c?{view:'cliente',id:c.clienteId,tab:'contratos'}:null); }
   { const cv=L('contas').filter(contaVencida); if(cv.length) add('b',`${cv.length} conta(s) a pagar vencida(s)`,`${money(cv.reduce((s,c)=>s+(+c.valor||0),0))} · a mais antiga venceu em ${dbr(cv.map(c=>c.vencimento).sort()[0])}`,{view:cv.some(c=>c.classe==='fixa')?'fixas':'variaveis'});
     const cs=L('contas').filter(c=>c.status==='aberta'&&!contaVencida(c)&&c.vencimento<=addDias(hoje(),5)); if(cs.length) add('w',`${cs.length} conta(s) vencem nos próximos 5 dias`,money(cs.reduce((s,c)=>s+(+c.valor||0),0)),{view:cs.some(c=>c.classe==='fixa')?'fixas':'variaveis'}); }
-  if(S.me && S.me.perfil==='admin'){ const n=(S.perfis||[]).filter(p=>p.perfil==='pendente'||!p.ativo).length; if(n) add('i',`${n} usuário(s) aguardando liberação`,'Defina perfil e ative em Configurações → Usuários',{view:'config'}); }
+  if(S.me && S.me.perfil==='admin'){ const n=(S.perfis||[]).filter(p=>p.perfil==='pendente'||!p.ativo).length; if(n) add('i',`${n} usuário(s) aguardando liberação`,'Defina perfil e ative em Configurações → Usuários',{view:'config',tab:'usuarios'}); }
   const o={b:0,w:1,i:2}; return A.sort((a,b)=>o[a.sev]-o[b.sev]);
 }
 
@@ -663,9 +667,10 @@ const SCHEMA = {
     {k:'competencia',l:'Competência',t:'date',req:1,defFn:hoje},{k:'dataCaixa',l:'Data de pagamento / recebimento',t:'date'},
     {k:'descricao',l:'Justificativa',t:'area',req:1,full:1}]},
   vendas:{col:'veiculos', titulo:'Registrar venda', fields:[
-    {k:'vdData',l:'Data da venda',t:'date',req:1,defFn:hoje},{k:'vdValor',l:'Valor de venda (R$)',t:'money',req:1},{k:'vdComprador',l:'Comprador'},
+    {k:'vdData',l:'Data da venda',t:'date',req:1,defFn:hoje,hint:'Se o carro tiver contrato ativo, ele é encerrado nesta data.'},{k:'vdValor',l:'Valor de venda (R$)',t:'money',req:1},{k:'vdComprador',l:'Comprador'},
     {k:'vdCustos',l:'Custos de venda (R$)',t:'money'},{k:'vdKm',l:'Km na entrega',t:'num'},{k:'vdObs',l:'Observações',t:'area',full:1}],
-    async save(v,id){ if(contratoDoVeiculo(id)) throw 'Encerre o contrato ativo antes de registrar a venda.';
+    async save(v,id){ const ct=L('contratos').find(c=>c.veiculoId===id && c.status!=='encerrado' && (!c.fim || c.fim>=v.vdData));
+      if(ct){ if(v.vdData<ct.inicio) throw 'A data da venda é anterior ao início do contrato deste carro.'; await salvar('contratos',ct.id,{status:'encerrado',fim:v.vdData},'encerrou contrato pela venda do carro'); }
       await salvar('veiculos',id,{...v,statusManual:'vendido'},'registrou venda');
       if(v.vdKm) await salvar('leituras',null,{veiculoId:id,km:+v.vdKm,data:v.vdData+'T12:00',origem:'venda',status:'verificada'},'registrou km');
       await syncLanc('vendas',id,[{veiculoId:id,tipo:'venda',categoria:'Venda do veículo',descricao:'Venda'+(v.vdComprador?' para '+v.vdComprador:''),valor:+v.vdValor-(+v.vdCustos||0),competencia:v.vdData,dataCaixa:v.vdData}]);
@@ -730,7 +735,7 @@ function fieldHTML(f, val){
   let inp='';
   const v = val==null ? '' : val;
   switch(f.t){
-    case 'num': case 'money': inp=`<input id="${id}" name="${f.k}" type="number" step="${f.step||(f.t==='money'?'0.01':'1')}" inputmode="decimal" value="${esc(v)}"${f.req?' required':''}>`; break;
+    case 'num': case 'money': inp=`<input id="${id}" name="${f.k}" type="text" inputmode="decimal" autocomplete="off" placeholder="${f.t==='money'?'Ex.: 54.190,00':'Ex.: 55.000'}" value="${esc(numBR(v))}"${f.req?' required':''}>`; break;
     case 'date': inp=`<input id="${id}" name="${f.k}" type="date" value="${esc(String(v).slice(0,10))}"${f.req?' required':''}>`; break;
     case 'dt': inp=`<input id="${id}" name="${f.k}" type="datetime-local" value="${esc(String(v).slice(0,16))}"${f.req?' required':''}>`; break;
     case 'month': inp=`<input id="${id}" name="${f.k}" type="month" value="${esc(v)}"${f.req?' required':''}>`; break;
@@ -749,12 +754,17 @@ function fieldHTML(f, val){
 }
 const CAT_PADRAO=['Seguro','IPVA','Licenciamento','Rastreador','Parcela do consórcio','Manutenção','Pneus','Revisão','Peças','Contador','Aluguel do escritório','Sistema e internet','Taxas bancárias','Despachante','Lavagem','Combustível','Reembolso ao cliente'];
 function sugestoes(lista){ if(lista==='cat_contas') return [...new Set(L('contas').concat(L('recorrencias')).map(c=>c.categoria).filter(Boolean).concat(CAT_PADRAO))].sort((a,b)=>a.localeCompare(b)); return []; }
-function lerForm(form, sc){
+function numBR(v){ if(v===null||v===undefined||v==='') return ''; if(typeof v!=='number') return String(v); return String(v).replace('.',','); }
+function lerNumBR(t){ let s=String(t||'').trim().replace(/[^\d,.\-]/g,''); if(s==='') return null;
+  if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.');
+  else if(/^-?\d{1,3}(\.\d{3})+$/.test(s)) s=s.replace(/\./g,'');
+  return +s; }
+function lerForm(form, sc, estrito){
   const v={};
   for(const f of sc.fields){ if(f.sec||f.t==='file'||f.t==='files') continue;
     if(f.t==='checklist'){ const o={}; form.querySelectorAll(`.fld[data-k="${f.k}"] [data-ck]`).forEach(c=>{ if(c.checked) o[c.dataset.ck]=true; }); v[f.k]=o; continue; }
     const el=form.querySelector('#f_'+f.k); if(!el) continue;
-    if(f.t==='bool') v[f.k]=el.checked; else if(f.t==='num'||f.t==='money') v[f.k]= el.value===''?null:+el.value; else v[f.k]=el.value; }
+    if(f.t==='bool') v[f.k]=el.checked; else if(f.t==='num'||f.t==='money') { const n=lerNumBR(el.value); if(n!==null&&isNaN(n)&&estrito) throw 'Valor inválido em "'+f.l+'": '+el.value; v[f.k]=n; } else v[f.k]=el.value; }
   return v;
 }
 function aplicarShow(form, sc){
@@ -773,14 +783,14 @@ function openForm(key, id, preset){
   const form=$('#frm');
   aplicarShow(form,sc);
   form.addEventListener('change',e=>{ const k=e.target.name; const f=sc.fields.find(x=>x.k===k); if(f&&f.onChange) f.onChange(form,e.target.value);
-    if(k==='plano' && e.target.value!==''){ const p=cfg().planos[+e.target.value]; if(p){ const set=(n,x)=>{const el=form.querySelector('#f_'+n); if(el&&x!=null) el.value=x;}; set('prazoMeses',p.prazo); set('kmContratado',p.km); set('aluguel',p.aluguel); set('valorKmExcedente',p.kmExc); set('pacotesTxt',p.pacotes); set('periodicidade','mensal'); } }
+    if(k==='plano' && e.target.value!==''){ const p=cfg().planos[+e.target.value]; if(p){ const set=(n,x)=>{const el=form.querySelector('#f_'+n); if(el&&x!=null) el.value=typeof x==='number'?numBR(x):x;}; set('prazoMeses',p.prazo); set('kmContratado',p.km); set('aluguel',p.aluguel); set('valorKmExcedente',p.kmExc); set('pacotesTxt',p.pacotes); set('periodicidade','mensal'); } }
     aplicarShow(form,sc); });
   form.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dlg.close());
   const del=form.querySelector('[data-del]'); if(del) del.onclick=async()=>{ const motivo=await perguntar('Excluir este registro?','Ele sai das listas, mas fica guardado no histórico e na auditoria. Informe o motivo:','Excluir',true); if(motivo===null) return; try{ await excluirLogico(sc.col,id,motivo); if(sc.col==='manutencoes'||sc.col==='documentos'||sc.col==='reembolsos') await syncConta(sc.col,id,null); if(sc.col==='contas') await syncLanc('contas',id,[]); dlg.close(); toast('Registro excluído.'); }catch(e){ toast(errMsg(e)); } };
   form.addEventListener('submit', async e=>{
     e.preventDefault(); const err=$('#ferr'); err.hidden=true;
     if(S.preview){ err.textContent='Modo visualização: nada é gravado.'; err.hidden=false; return; }
-    const v=lerForm(form,sc);
+    let v; try{ v=lerForm(form,sc,true); }catch(m){ err.textContent=String(m); err.hidden=false; err.style.color='var(--danger)'; return; }
     const falta=sc.fields.filter(f=>f.req && !f.sec && !(f.show && !f.show(v)) && (f.t==='file' ? !(cur&&cur[f.k]) && !(form.querySelector('#f_'+f.k)||{}).files?.length : f.t!=='files' && f.t!=='checklist' && (v[f.k]===''||v[f.k]==null)));
     if(falta.length){ err.textContent='Preencha: '+falta.map(f=>f.l).join(', ')+'.'; err.hidden=false; err.style.color='var(--danger)'; return; }
     delete v.plano;
@@ -932,7 +942,7 @@ const vCell = id => { const v=G('veiculos',id); return v? placaHTML(v) : '—'; 
 /* ===================== views ===================== */
 const NAV = [
   ['grp','Operação'],['painel','Painel'],['clientes','Clientes'],['veiculos','Veículos'],['contratos','Contratos'],
-  ['grp','Financeiro'],['receber','Contratos a receber'],['fixas','Contas fixas'],['variaveis','Contas variáveis'],['resultado','Resultado'],
+  ['grp','Financeiro'],['receber','Faturas'],['fixas','Contas fixas'],['variaveis','Contas variáveis'],['resultado','Resultado'],
   ['grp','Sistema'],['config','Configurações'],['melhorias','Melhorias'],['auditoria','Auditoria']];
 const PERM={admin:'*',operacional:['painel','clientes','cliente','veiculos','veiculo','contratos','melhorias'],financeiro:['painel','clientes','cliente','veiculos','veiculo','contratos','receber','fixas','variaveis','resultado','melhorias']};
 const pode = v => !!S.me && (PERM[S.me.perfil]==='*' || (PERM[S.me.perfil]||[]).includes(v));
@@ -992,24 +1002,29 @@ function vDocs(){ return head('Documentos e seguros','CRLV, IPVA, licenciamento,
 function tabelaFaturas(fs){ return tabela([{h:'Competência',f:f=>`<b>${mesbr(f.competencia)}</b>`},{h:'Veículo',f:f=>vCell(f.veiculoId)},{h:'Cliente',f:f=>esc(nomeCliente(f.clienteId))},{h:'Itens',f:f=>(f.itens||[]).map(i=>esc(i.desc)).join('<br>')},{h:'Total',n:1,f:f=>`<b>${money(f.total)}</b>`},{h:'Vencimento',f:f=>dbr(f.vencimento)},{h:'Situação',f:f=>{const at=f.status==='aberta'&&f.vencimento<hoje(); return `<span class="pill ${f.status==='paga'?'p-ok':f.status==='cancelada'?'':at?'p-bad':'p-info'}">${f.status==='aberta'?(at?'Atrasada':'Aberta'):f.status==='paga'?'Paga '+dbr(f.pagoEm):'Cancelada'}</span>`;}},{h:'',f:f=>f.status==='aberta'?`<div class="row"><button class="btn sm pri" data-act="baixar" data-id="${f.id}">Registrar pagamento</button><button class="btn sm danger" data-act="cancelarFat" data-id="${f.id}">Cancelar</button></div>`:f.status==='paga'?`<button class="btn sm danger" data-act="cancelarFat" data-id="${f.id}">Cancelar</button>`:''}],fs,'Nenhuma fatura emitida.'); }
 function vFaturas(){ return head('Faturas','A fatura guarda as condições do contrato na emissão. Correções viram cancelamento ou ajuste, nunca edição.',B('Gerar fatura','gerarFatura','',1))+tabelaFaturas(L('faturas').sort((a,b)=>a.competencia<b.competencia?1:a.competencia>b.competencia?-1:((a.criadoEm||'')<(b.criadoEm||'')?1:-1))); }
 function tabelaLanc(ls){ return tabela([{h:'Competência',f:l=>dbr(l.competencia)},{h:'Veículo',f:l=>l.veiculoId?vCell(l.veiculoId):'<span class="muted">Geral</span>'},{h:'Natureza',f:l=>esc(lbl(LC_T,l.tipo))},{h:'Categoria',f:l=>esc(l.categoria)},{h:'Descrição',f:l=>esc(l.descricao||'')+(l.estornoDe?' <span class="tag">Estorno</span>':'')+(l.estornado?' <span class="tag">Estornado</span>':'')+(l.origemCol?` <small class="muted">· origem: ${esc(l.origemCol)}</small>`:' <small class="muted">· manual</small>')},{h:'Caixa',f:l=>dbr(l.dataCaixa)},{h:'Valor',n:1,f:l=>`<span style="color:${+l.valor<0?'var(--danger)':'inherit'}">${money(l.valor)}</span>`},{h:'',f:l=>!l.origemCol&&!l.estornado&&!l.estornoDe?`<button class="btn sm" data-act="estornar" data-id="${l.id}">Estornar</button>`:''}],ls,'Nenhum lançamento.'); }
+const CFG_TABS=[['usuarios','Usuários'],['alertas','Avisos e prazos'],['manut','Manutenção preventiva'],['quem','Quem paga o quê'],['backup','Backup']];
 function vConfig(){
-  const P=cfg();
-  return head('Configurações','Parâmetros, matriz de responsabilidade, usuários e backup.')+
-  `<div class="stack"><form class="card" id="cfgf"><h3>Parâmetros</h3><div class="fgrid">
-    <div class="fld"><label for="c_al">Alertas de franquia (%)</label><input id="c_al" value="${esc(P.alertasKm.join(', '))}"><span class="hint">Separados por vírgula</span></div>
-    <div class="fld"><label for="c_hc">Lembrete de check-in aberto (horas)</label><input id="c_hc" type="number" value="${P.horasCheckin}"></div>
-    <div class="fld"><label for="c_dp">Dias usados na projeção de km</label><input id="c_dp" type="number" value="${P.diasProjecao}"></div>
-    <div class="fld"><label for="c_dv">Aviso de vencimento (dias antes)</label><input id="c_dv" type="number" value="${P.diasAvisoVenc}"></div>
-    <div class="fld"><label for="c_dm">Aviso de prazo de multa (dias antes)</label><input id="c_dm" type="number" value="${P.diasAvisoMulta}"></div>
-    <div class="fld"><label for="c_le">Limite de autonomia em emergência (R$)</label><input id="c_le" type="number" step="0.01" value="${P.limiteEmergencia}"></div>
-    <div class="fld"><label for="c_cr">Carência padrão para desconto de dias parados</label><input id="c_cr" type="number" value="${P.carenciaPadrao}"></div></div>
-    <h3 style="margin-top:16px">Manutenção preventiva padrão (cada veículo pode ter o seu)</h3><div class="fgrid">
-    ${[['pvRevKm','Revisão a cada (km)'],['pvRevMeses','Revisão a cada (meses)'],['pvOleoKm','Óleo a cada (km)'],['pvOleoMeses','Óleo a cada (meses)'],['pvAlinKm','Alinhamento a cada (km)'],['pvAlinMeses','Alinhamento a cada (meses)']].map(([k,l])=>`<div class="fld"><label for="pv_${k}">${l}</label><input id="pv_${k}" type="number" value="${esc((P.prev||{})[k]??'')}"></div>`).join('')}
-    <div class="fld"><label for="c_pak">Avisar quando faltar (km)</label><input id="c_pak" type="number" value="${P.prevAvisoKm}"></div><div class="fld"><label for="c_pad">Avisar quando faltar (dias)</label><input id="c_pad" type="number" value="${P.prevAvisoDias}"></div></div>
-    <h3 style="margin-top:16px">Matriz de responsabilidade de custos</h3><div class="fgrid">${CATS.map(c=>`<div class="fld"><label for="mz_${c[0]}">${esc(c[1])}</label><select id="mz_${c[0]}">${ARCA.slice(0,3).map(a=>`<option value="${a[0]}"${arcaPadrao(c[0])===a[0]?' selected':''}>${esc(a[1])}</option>`).join('')}</select></div>`).join('')}</div>
-    <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn pri" type="submit">Salvar parâmetros</button></div></form>
-  <div class="note i">Os modelos de plano e o texto do contrato agora ficam no menu <b>Contratos</b>.</div>
-  ${secUsuarios()}${secDados()}</div>`;
+  const P=cfg(); const t=CFG_TABS.some(x=>x[0]===S.ui.cfgtab)?S.ui.cfgtab:'usuarios'; const vis=k=>t===k?'':' hidden';
+  const pendentes=(S.perfis||[]).filter(p=>p.perfil==='pendente'||!p.ativo).length;
+  const campo=(id,label,val,hint,tipo)=>`<div class="fld"><label for="${id}">${label}</label><input id="${id}" ${tipo==='txt'?'':'type="number" step="any"'} value="${esc(val??'')}">${hint?`<span class="hint">${hint}</span>`:''}</div>`;
+  return head('Configurações','Usuários, avisos, manutenção preventiva e backup.')+
+  `<div class="tabs" role="tablist">${CFG_TABS.map(([k,l])=>`<button role="tab" aria-selected="${t===k}" data-cfgtab="${k}">${l}${k==='usuarios'&&pendentes?` <span class="pill p-warn">${pendentes}</span>`:''}</button>`).join('')}</div>
+  <div class="stack"><div${vis('usuarios')}>${secUsuarios()}</div>
+  <form class="card" id="cfgf"${['alertas','manut','quem'].includes(t)?'':' hidden'}>
+    <div${vis('alertas')}><h3>Avisos e prazos</h3><p class="muted" style="margin:0 0 12px">Quando o sistema mostra uma pendência no Painel.</p><div class="fgrid">
+      ${campo('c_al','Avisar quando a franquia de km chegar a (%)',P.alertasKm.join(', '),'Separe por vírgula. Ex.: 70, 85, 100','txt')}
+      ${campo('c_dv','Avisar vencimento de documentos e contratos (dias antes)',P.diasAvisoVenc)}
+      ${campo('c_dm','Avisar prazo para indicar condutor de multa (dias antes)',P.diasAvisoMulta)}
+      ${campo('c_hc','Avisar check-in aberto há mais de (horas)',P.horasCheckin,'O motorista esqueceu de fazer o checkout.')}
+      ${campo('c_le','Limite de despesa de emergência sem autorização (R$)',P.limiteEmergencia,'Valor padrão dos contratos novos.')}
+      ${campo('c_cr','Dias parados antes de dar desconto no aluguel',P.carenciaPadrao,'Valor padrão dos contratos novos (carro na oficina por culpa da F2).')}
+      ${campo('c_dp','Previsão de km: usar a média dos últimos (dias)',P.diasProjecao,'Usado para prever se o cliente vai estourar a franquia.')}</div></div>
+    <div${vis('manut')}><h3>Manutenção preventiva padrão</h3><p class="muted" style="margin:0 0 12px">Vale para todos os carros, a não ser que o cadastro do carro tenha outro valor. Deixe 0 para não controlar.</p><div class="fgrid">
+      ${[['pvRevKm','Revisão a cada (km)'],['pvRevMeses','Revisão a cada (meses)'],['pvOleoKm','Troca de óleo a cada (km)'],['pvOleoMeses','Troca de óleo a cada (meses)'],['pvAlinKm','Alinhamento a cada (km)'],['pvAlinMeses','Alinhamento a cada (meses)']].map(([k,l])=>campo('pv_'+k,l,(P.prev||{})[k])).join('')}
+      ${campo('c_pak','Avisar quando faltar (km)',P.prevAvisoKm)}${campo('c_pad','Avisar quando faltar (dias)',P.prevAvisoDias)}</div></div>
+    <div${vis('quem')}><h3>Quem paga cada tipo de manutenção</h3><p class="muted" style="margin:0 0 12px">É a sugestão que aparece ao lançar uma manutenção. Pode ser trocada em cada lançamento.</p><div class="fgrid">${CATS.map(c=>`<div class="fld"><label for="mz_${c[0]}">${esc(c[1])}</label><select id="mz_${c[0]}">${ARCA.slice(0,3).map(a=>`<option value="${a[0]}"${arcaPadrao(c[0])===a[0]?' selected':''}>${esc(a[1])}</option>`).join('')}</select></div>`).join('')}</div></div>
+    <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn pri" type="submit">Salvar</button></div></form>
+  <div${vis('backup')}>${secDados()}</div></div>`;
 }
 function vAuditoria(){
   const as=all('auditoria').slice().sort((a,b)=>(a.ts||'')<(b.ts||'')?1:-1).slice(0,400);
@@ -1053,9 +1068,9 @@ function openPerfil(id){
   dlg.showModal();
 }
 function secDados(){
-  return `<section class="card"><h3>Dados e sincronização</h3><p class="muted" style="margin:0 0 10px">Projeto Supabase: <span class="mono">${esc((credenciais()||{}).url||'—')}</span>. Os dados ficam no banco e sincronizam em tempo real entre computadores e celulares. Anexos ficam no Storage do Supabase.</p>
+  return `<section class="card"><h3>Backup</h3><p class="muted" style="margin:0 0 10px">Os dados já ficam guardados na nuvem e sincronizam sozinhos. Use o backup para ter uma cópia sua, por exemplo uma vez por mês.</p>
   <div class="row">${B('Exportar backup (JSON)','backup')}${S.me&&S.me.perfil==='admin'?'<label class="btn" for="cf_imp">Importar backup</label><input id="cf_imp" type="file" accept=".json,application/json" hidden>':''}</div>
-  <p class="hint muted" style="margin:8px 0 0">O importador aceita também o backup exportado do painel de teste do claude.ai.</p></section>`;
+</section>`;
 }
 
 function vVeiculo(id){
@@ -1245,7 +1260,7 @@ function vReceber(){
   const fs=L('faturas').sort((a,b)=>a.competencia<b.competencia?1:a.competencia>b.competencia?-1:((a.criadoEm||'')<(b.criadoEm||'')?1:-1));
   const ab=fs.filter(f=>f.status==='aberta'); const atr=ab.filter(f=>f.vencimento<hoje()); const m=mesAtual(); const recebMes=fs.filter(f=>f.status==='paga'&&(f.pagoEm||'').slice(0,7)===m).reduce((s,f)=>s+(+f.total||0),0);
   const mensal=L('contratos').filter(c=>contratoAtivo(c)).reduce((s,c)=>s+(+c.aluguel||0),0);
-  return head('Contratos a receber','Faturas dos contratos. A fatura guarda as condições do contrato na emissão; correções viram cancelamento ou ajuste.',B('Gerar fatura','gerarFatura','',1))+
+  return head('Faturas','Faturas dos contratos. A fatura guarda as condições do contrato na emissão; correções viram cancelamento ou ajuste.',B('Gerar fatura','gerarFatura','',1))+
   `<div class="stack"><div class="kpis">${kpi('Aluguel mensal',money(mensal),'contratos ativos')}${kpi('Em aberto',money(ab.reduce((s,f)=>s+(+f.total||0),0)),ab.length+' fatura(s)')}${kpi('Em atraso',money(atr.reduce((s,f)=>s+(+f.total||0),0)),atr.length?`<em class="neg">${atr.length} fatura(s)</em>`:'nenhuma')}${kpi('Recebido no mês',money(recebMes),mesbr(m))}</div>${tabelaFaturas(fs)}</div>`;
 }
 function vResultado(){
@@ -1265,7 +1280,7 @@ function vResultado(){
 }
 function graficoMeses(){
   const ms=[]; for(let i=5;i>=0;i--) ms.push(mesMais(mesAtual(),-i));
-  const ds=ms.map(m=>({m,...resumoFin(()=>true,x=>x===m)})); const mx=Math.max(1,...ds.map(d=>Math.max(d.rec,d.custo)));
+  const ds=ms.map(m=>({m,...resumoFin(()=>true,x=>x===m)})); if(!ds.some(d=>d.rec||d.custo)) return '<div class="note i">O gráfico dos últimos 6 meses aparece quando houver faturas emitidas ou contas lançadas.</div>'; const mx=Math.max(1,...ds.map(d=>Math.max(d.rec,d.custo)));
   const W=720,H=200,pl=70,pr=10,pt=14,pb=30; const gw=(W-pl-pr)/ds.length; const bw=Math.min(26,gw/3.4); const Y=v=>H-pb-(v/mx)*(H-pt-pb);
   const ticks=[0,mx/2,mx];
   return `<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Últimos 6 meses</h3><div class="row" style="gap:14px;font-size:12.5px"><span><span class="lg" style="background:var(--accent)"></span> Receita</span><span><span class="lg" style="background:var(--amber)"></span> Custo fixo</span><span><span class="lg" style="background:var(--info)"></span> Custo variável</span></div></div>
@@ -1333,12 +1348,15 @@ function vPainelGeral(al){
   const mensal=cs.reduce((s,c)=>s+(+c.aluguel||0),0); const aRec=cs.reduce((s,c)=>s+aReceberContrato(c),0);
   const r=resumoFin(()=>true,x=>x===m); const ab=L('faturas').filter(f=>f.status==='aberta'); const atr=ab.filter(f=>f.vencimento<hoje());
   const cAb=contasAtivas().filter(c=>c.status==='aberta'); const cVenc=cAb.filter(contaVencida); const cSem=cAb.filter(c=>!contaVencida(c)&&c.vencimento<=addDias(hoje(),7));
-  const capital=ativos.reduce((s,v)=>s+(+v.aqPreco||0)+(+v.aqCustos||0),0);
+  const capital=ativos.reduce((s,v)=>s+(+v.aqPreco||0)+(+v.aqCustos||0),0); const semPreco=ativos.filter(v=>!+v.aqPreco).length;
   const conts=cs.filter(c=>c.kmContratado);
+  const frotaTxt=Object.entries(ativos.reduce((o,v)=>{ const st=statusVeiculo(v); o[st]=(o[st]||0)+1; return o; },{})).sort((a,b)=>b[1]-a[1]).map(([st,n])=>`${n} ${(VSTATUS[st]||st).toLowerCase()}`).join(' · ');
+  const comPrazo=cs.filter(c=>c.fim), semPrazo=cs.filter(c=>!c.fim); const mensalSemPrazo=semPrazo.reduce((s,c)=>s+(+c.aluguel||0),0);
+  const fatMes=L('faturas').filter(f=>f.status!=='cancelada'&&f.competencia===mesMais(m,-1)); const aEmitir=cs.filter(c=>c.inicio<=mesMais(m,-1)+'-31' && !fatMes.some(f=>f.contratoId===c.id));
   return head('Painel',`Hoje, ${dbr(hoje())} · competência ${mesbr(m)}`,`${B('Gerar fatura','gerarFatura','',1)}`)+
   `<div class="stack">
-  <section><h3>Clientes e contratos</h3><div class="kpis">${kpi('Clientes ativos',cliAt.size,L('clientes').length+' cadastrado(s)')}${kpi('Frota',ativos.length,`${cnt('alugado')} alugado(s) · ${cnt('disponivel')} livre(s)${cnt('manutencao')?' · '+cnt('manutencao')+' na oficina':''}`)}${kpi('Aluguel mensal',money(mensal),cs.length+' contrato(s) ativo(s)')}${kpi('Total a receber dos contratos',money(aRec),'até o fim de cada contrato · estimado, sem reajuste')}${kpi('Faturas em aberto',money(ab.reduce((s,f)=>s+(+f.total||0),0)),atr.length?`<em class="neg">${atr.length} em atraso</em>`:'nenhuma em atraso')}${kpi('Capital investido',money(capital),'compra da frota ativa')}</div></section>
-  <section><h3>Mês de ${mesbr(m)}</h3><div class="kpis">${kpi('Receita',money(r.rec),'faturas do mês')}${kpi('Custo fixo',money(r.fixa),'')}${kpi('Custo variável',money(r.variavel),'')}${kpi('Resultado',`<em class="${r.res<0?'neg':''}">${money(r.res)}</em>`,r.mg!=null?'Margem '+nf(r.mg)+'%':'sem receita no mês')}${kpi('Contas a pagar',money(cAb.reduce((s,c)=>s+(+c.valor||0),0)),cVenc.length?`<em class="neg">${cVenc.length} vencida(s)</em>`:cSem.length?cSem.length+' vence(m) em 7 dias':'em dia')}</div></section>
+  <section><h3>Clientes e contratos</h3><div class="kpis">${kpi('Clientes com contrato',cliAt.size,L('clientes').length+' cadastrado(s)')}${kpi('Frota',ativos.length+' carro(s)',frotaTxt||'—')}${kpi('Aluguel por mês',money(mensal),cs.length+' contrato(s) ativo(s)')}${kpi('A receber até o fim dos contratos',comPrazo.length?money(aRec):'—',(comPrazo.length?comPrazo.length+' contrato(s) com prazo, estimado':'nenhum contrato com prazo')+(semPrazo.length?` · ${semPrazo.length} mensal(is) sem prazo: ${money(mensalSemPrazo)}/mês`:''))}${kpi('Faturas em aberto',money(ab.reduce((s,f)=>s+(+f.total||0),0)),atr.length?`<em class="neg">${atr.length} em atraso</em>`:aEmitir.length?`<em class="neg">${aEmitir.length} de ${mesbr(mesMais(m,-1))} sem emitir</em>`:'nenhuma em atraso')}${kpi('Capital na frota',capital?money(capital):'—',semPreco?`<em class="neg">falta o preço de compra de ${semPreco} carro(s)</em>`:'compra dos carros ativos')}</div></section>
+  <section><h3>Mês de ${mesbr(m)}</h3><div class="kpis">${kpi('Faturado',money(r.rec),'aluguel previsto: '+money(mensal))}${kpi('Custo fixo',money(r.fixa),'')}${kpi('Custo variável',money(r.variavel),'')}${kpi('Resultado',`<em class="${r.res<0?'neg':''}">${money(r.res)}</em>`,r.mg!=null?'Margem '+nf(r.mg)+'%':r.rec?'':'as faturas do mês ainda não foram emitidas')}${kpi('Contas a pagar',money(cAb.reduce((s,c)=>s+(+c.valor||0),0)),cVenc.length?`<em class="neg">${cVenc.length} vencida(s)</em>`:cSem.length?cSem.length+' vence(m) em 7 dias':'em dia')}</div></section>
   ${graficoMeses()}
   <div class="grid2">
     <section class="card" style="padding:0"><div style="padding:14px 14px 8px"><h3>Pendências (${al.length})</h3></div><div class="alerts">${al.length?al.slice(0,14).map((a,i)=>`<div class="alert" data-al="${i}" role="button" tabindex="0"><span class="sev ${a.sev}"></span><div><b>${esc(a.titulo)}</b><small>${esc(a.detalhe)}</small></div><span class="muted">›</span></div>`).join(''):'<div class="empty">Nenhuma pendência. Tudo em dia.</div>'}${al.length>14?`<div class="empty">+ ${al.length-14} pendências</div>`:''}</div></section>
@@ -1429,10 +1447,11 @@ function vRentab(){
   const rs=linhasRentab(); if(!rs.length) return '<div class="tw"><div class="empty">Cadastre veículos para ver a rentabilidade.</div></div>';
   const ativos=rs.filter(r=>r.status!=='vendido'); const tot=rs.reduce((s,r)=>s+r.acc.res,0); const cap=ativos.reduce((s,r)=>s+r.compra,0);
   const ys=ativos.filter(r=>r.yieldMes!=null); const yMed=ys.length? ys.reduce((s,r)=>s+r.aluguel,0)/ys.reduce((s,r)=>s+r.compra,0)*100 : null;
-  const parados=ativos.filter(r=>r.parado); const melhor=rs[0], pior=rs[rs.length-1];
+  const parados=ativos.filter(r=>r.parado); const melhor=rs[0], pior=rs[rs.length-1]; const temDados=rs.some(r=>r.acc.rec||r.acc.custo);
   const mx=Math.max(1,...rs.map(r=>Math.abs(r.acc.res)));
   const pb=r=>r.payback==null?'<span class="muted">—</span>':r.payback===0?'<span class="pill p-ok">Já se pagou</span>':nf(r.payback,0)+' mês(es)';
-  return `<div class="stack"><div class="kpis">${kpi('Resultado acumulado da frota',`<em class="${tot<0?'neg':''}">${money(tot)}</em>`,'receita menos custos, desde o início')}${kpi('Capital na frota',money(cap),'compra + preparação dos carros ativos')}${kpi('Aluguel ÷ preço do carro',pct(yMed,2),'por mês, média dos carros alugados')}${kpi('Melhor carro',esc(PL(melhor.v.id)),money(melhor.acc.res))}${rs.length>1?kpi('Pior carro',esc(PL(pior.v.id)),`<em class="${pior.acc.res<0?'neg':''}">${money(pior.acc.res)}</em>`):''}${kpi('Carros sem contrato',parados.length,parados.length?parados.map(r=>PL(r.v.id)).join(', '):'todos alugados')}</div>
+  return `<div class="stack"><div class="kpis">${kpi('Resultado acumulado da frota',`<em class="${tot<0?'neg':''}">${money(tot)}</em>`,'receita menos custos, desde o início')}${kpi('Capital na frota',money(cap),'compra + preparação dos carros ativos')}${kpi('Aluguel ÷ preço do carro',pct(yMed,2),'por mês, média dos carros alugados')}${temDados?kpi('Melhor carro',esc(PL(melhor.v.id)),money(melhor.acc.res))+(rs.length>1?kpi('Pior carro',esc(PL(pior.v.id)),`<em class="${pior.acc.res<0?'neg':''}">${money(pior.acc.res)}</em>`):''):''}${kpi('Carros sem contrato',parados.length,parados.length?parados.map(r=>PL(r.v.id)).join(', '):'todos alugados')}</div>
+  ${temDados?'':'<div class="note">Ainda não há faturas emitidas nem custos lançados, então o resultado de todos os carros é zero. A coluna "Rende por mês" já usa o aluguel do contrato e as despesas fixas.</div>'}
   <section><h3>Ranking por resultado acumulado</h3>${tabela([
     {h:'Veículo',f:r=>placaHTML(r.v)+` <small class="muted">${esc(r.v.modelo||'')}</small>${r.parado?' <span class="pill p-warn">Sem contrato</span>':''}${r.status==='vendido'?' <span class="pill">Vendido</span>':''}`},
     {h:'Resultado acumulado',f:r=>`<div style="min-width:150px"><b style="color:${r.acc.res<0?'var(--danger)':'inherit'}">${money(r.acc.res)}</b>${barra(r.acc.res,mx,r.acc.res<0)}</div>`},
@@ -1624,7 +1643,7 @@ function agCamposDesc(key){ const sc=SCHEMA[key];
       : f.t==='sel' && f.opts ? 'um de: '+f.opts.map(o=>o.v===''?null:o.v).filter(Boolean).join('|') : 'texto';
     return `${f.k} (${f.l||'Veículo'}; ${t}${f.req?'; obrigatório':''})`; }).join('; ')
     + (sc.fields.some(f=>['file','files'].includes(f.t)) ? '. Fotos e arquivos a pessoa anexa no formulário.' : ''); }
-function agNum(v){ if(typeof v==='number') return v; let s=String(v).replace(/[^\d,.\-]/g,''); if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.'); return s===''?'':+s; }
+function agNum(v){ if(typeof v==='number') return v; const n=lerNumBR(v); return n===null?'':n; }
 function agResolver(key, campos){
   const sc=SCHEMA[key]; const pre={}, avisos=[]; campos=campos||{};
   for(const f of sc.fields.filter(f=>f.k && !f.sec)){
@@ -2382,13 +2401,14 @@ function render(){
   if(r.view==='config') bindConfig();
   if(r.view==='veiculos'){ filtrarVeiculos(S.ui.busca||''); if(bf){ const i=$('#vbusca'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } } }
 }
-function go(view,id,tab){ S.route={view,id}; if(view==='veiculo') S.ui.vtab=tab||'resumo'; if(view==='cliente') S.ui.ctab=tab||'resumo'; if(['fixas','variaveis'].includes(view)) gerarRecorrentes().then(n=>{ if(n) render(); }); window.scrollTo(0,0); render(); }
+function go(view,id,tab){ S.route={view,id}; if(view==='config'&&tab) S.ui.cfgtab=tab; if(view==='veiculo') S.ui.vtab=tab||'resumo'; if(view==='cliente') S.ui.ctab=tab||'resumo'; if(['fixas','variaveis'].includes(view)) gerarRecorrentes().then(n=>{ if(n) render(); }); window.scrollTo(0,0); render(); }
 document.addEventListener('click', async e=>{
   const fl=e.target.closest('[data-file]'); if(fl){ e.preventDefault(); Anexos.abrir(fl.dataset.file); return; }
   if(e.target.closest('a[href]')) return;
   const al=e.target.closest('[data-al]'); if(al){ const a=S._al[+al.dataset.al]; if(a&&a.go) go(a.go.view,a.go.id,a.go.tab); return; }
   const vt=e.target.closest('[data-vtab]'); if(vt){ S.ui.vtab=vt.dataset.vtab; render(); return; }
   const ct=e.target.closest('[data-ctab]'); if(ct){ S.ui.ctab=ct.dataset.ctab; render(); return; }
+  const cft=e.target.closest('[data-cfgtab]'); if(cft){ S.ui.cfgtab=cft.dataset.cfgtab; render(); return; }
   const pt=e.target.closest('[data-ptab]'); if(pt){ S.ui.ptab=pt.dataset.ptab; render(); return; }
   const el=e.target.closest('[data-act],[data-go]'); if(!el) return;
   if(el.dataset.go && !el.dataset.act){ go(el.dataset.go, el.dataset.id, el.dataset.tab); return; }
