@@ -43,6 +43,10 @@ Perfis: Administrador F2 (tudo), Operacional F2 (frota, clientes e operação, s
 - Clientes: os ativos e os sem contrato. Dentro de cada cliente: resumo com os carros, contratos (e pedidos de km adicional), motoristas, faturas e chamados.
 - Veículos: busca por placa, modelo, cliente ou situação. Cada cartão mostra quanto o carro rende por mês. Dentro de cada carro: resumo, rendimento (faturamento mensal, despesas fixas do carro e quanto rende por mês), contrato, uso e check-in, quilometragem, abastecimento, vistorias, manutenções, chamados e reembolsos, documentos e seguros, multas, financeiro e histórico. Botões: QR code, editar, registrar venda, check-in/checkout.
 - Financeiro: Faturas (gerar, receber, cancelar), Contas fixas (inclui contas recorrentes geradas sozinhas todo mês), Contas variáveis, Resultado (por centro de custo).
+- MODO INTERNO: o sistema é usado só pela equipe da F2. Não existem área do cliente, área do motorista, check-in/checkout, QR code, abastecimento nem chamados; não ofereça essas funções.
+- Contas a pagar: uma tela só (fixas e variáveis). Cada conta tem o centro de custo (placa do carro ou Administrativo). Se for manutenção de um carro, preencha "É manutenção do carro?" (manutCat: pneus, bateria, alinhamento, oleo, preventiva, freios, suspensao, eletrica, motor, ar, corretiva, outra), a data do serviço (manutData) e o km (manutKm): o sistema registra a troca no histórico do carro, atualiza o km e recalcula a próxima.
+- Últimas trocas: no resumo de cada carro há o quadro de pneus (padrão a cada 30.000 km ou 5 anos), bateria (a cada 2 anos), alinhamento e balanceamento, óleo e revisão, com a última vez, a próxima e a situação.
+- Gerar fatura pede o km atual do carro (opcional) e grava a leitura.
 - Sistema: Configurações em abas (Usuários, Avisos e prazos, Manutenção preventiva, Quem paga o quê, Backup), Melhorias (sugestões anotadas) e Auditoria (tudo que cada pessoa fez).
 
 Regras de negócio:
