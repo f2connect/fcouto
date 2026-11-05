@@ -179,3 +179,4 @@ O isolamento entre clientes é feito pelas regras do banco (Row Level Security):
 - O plano gratuito do Supabase tem limites de uso e pode pausar projetos inativos. Confira em supabase.com/pricing antes de colocar em produção.
 - Notificações chegam como avisos dentro do sistema. E-mail e WhatsApp automáticos ficam para a etapa 2.
 - Depreciação, valor de mercado, índice de saúde, ponto ótimo de venda e simulador de compra seguem nas etapas 2 e 3 do Prompt-Mestre.
+
